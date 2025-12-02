@@ -2,6 +2,9 @@ settings:
   # Jira project key to create the issue in
   jira_project_key: "WF"
 
+  # The Jira epic key to link all created issues to
+  epic_key: "WF-163"
+
   # Dictionary mapping GitHub issue status to Jira issue status
   status_mapping:
     opened: Untriaged
