@@ -5,6 +5,30 @@ on:
   workflow_call:
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        directory: [airflow-api-server, airflow-scheduler, airflow-dag-processor, airflow-triggerer] 
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install
+      - name: Run Linter
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d "${{ matrix.directory }}" ]; then
+            cd "${{ matrix.directory }}"
+            uv tool run tox -e lint
+          else
+            echo "Skipping: '${{ matrix.directory }}' not found in repo root."
+          fi
   unit-tests:
     runs-on: ubuntu-latest
     strategy:
@@ -19,7 +43,7 @@ jobs:
           enable-cache: true
       - name: Set up Python
         run: uv python install
-      - name: Run Tests
+      - name: Run Unit Tests
         shell: bash
         run: |
           set -euo pipefail
