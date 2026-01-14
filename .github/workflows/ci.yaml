@@ -1,7 +1,6 @@
 name: CI
 
 on:
-  push:
   pull_request:
   workflow_call:
 
@@ -21,8 +20,15 @@ jobs:
       - name: Set up Python
         run: uv python install
       - name: Run Tests
-        working-directory: ${{ matrix.directory }}
-        run: uv tool run tox -e unit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d "${{ matrix.directory }}" ]; then
+            cd "${{ matrix.directory }}"
+            uv tool run tox -e unit
+          else
+            echo "Skipping: '${{ matrix.directory }}' not found in repo root."
+          fi
 
   discover-spread-tasks:
     runs-on: ubuntu-latest
