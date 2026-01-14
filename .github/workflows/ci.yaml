@@ -2,9 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [ track/3.1 ]
   pull_request:
-    branches: [ track/3.1 ]
+  workflow_call:
 
 jobs:
   unit-tests:
@@ -13,7 +12,6 @@ jobs:
       fail-fast: false
       matrix:
         directory: [airflow-api-server, airflow-scheduler, airflow-dag-processor, airflow-triggerer] 
-
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -25,3 +23,54 @@ jobs:
       - name: Run Tests
         working-directory: ${{ matrix.directory }}
         run: uv tool run tox -e unit
+
+  discover-spread-tasks:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.out.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Spread test matrix
+        id: out
+        shell: bash
+        run: |
+          SUITE_ROOT="tests/integration/spread"
+
+          if [ ! -d "$SUITE_ROOT" ]; then
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TASK_DIRS=$(ls ${SUITE_ROOT}/*/task.yaml | cut -d / -f 4)
+          MATRIX=$(printf '%s\n' "$TASK_DIRS" | jq -R . | jq -s '{include: map({task_dir: .})}')
+
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  spread-tests:
+    needs: discover-spread-tasks
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-spread-tasks.outputs.matrix) }}
+
+    if: ${{ needs.discover-spread-tasks.outputs.matrix != '{"include":[]}' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+      - name: Install spread
+        run: |
+          go install github.com/canonical/spread/cmd/spread@latest
+      - name: Run Spread task
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SUITE="tests/integration/spread"
+          TASK="${{ matrix.task_dir }}"
+
+          echo "Running Spread task: ${SUITE}/${TASK}"
+          ~/go/bin/spread "${SUITE}/${TASK}"
+  
