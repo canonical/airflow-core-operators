@@ -2,24 +2,12 @@ name: Publish changed charms
 
 on:
   push:
-    branches: ["track/3.1"]
-  workflow_dispatch:
-    inputs:
-      destination_channel:
-        description: CharmHub channel to publish to
-        required: false
-        default: latest/edge
-        type: string
-      source_branch:
-        description: Git branch to publish from (blank = default branch)
-        required: false
-        default: ''
-        type: string
+    branches: ["track/*"]
 
 jobs:
   get-modified-charms:
     name: Detect changed charms
-    uses: ./.github/workflows/get-modified-by-marker.yaml
+    uses: canonical/workflows-team/.github/workflows/get_modified_directories_by_marker.yaml@main
     with:
       base-ref: ${{ github.event.before }}
       marker: charmcraft.yaml
@@ -40,17 +28,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Compute tag prefix
         id: meta
         shell: bash
         run: |
           echo "tag_prefix=$(basename '${{ matrix.charm_path }}')" >> "$GITHUB_OUTPUT"
+
       - name: Upload charm to Charmhub
         uses: canonical/charming-actions/upload-charm@2.6.2
         with:
           credentials: ${{ secrets.CHARMCRAFT_CREDENTIALS }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           charm-path: ${{ matrix.charm_path }}
-          channel: ${{ inputs.destination_channel }}
-          tag-prefix: ${{ steps.charm.outputs.name }}
+          channel: latest/edge
+          tag-prefix: ${{ steps.meta.outputs.tag_prefix }}
           charmcraft-channel: 3.x/stable

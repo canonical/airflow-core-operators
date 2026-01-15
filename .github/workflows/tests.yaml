@@ -88,7 +88,8 @@ jobs:
           go-version: "1.22.x"
       - name: Install spread
         run: |
-          go install github.com/canonical/spread/cmd/spread@latest
+          sudo snap install go --classic
+          go install github.com/snapcore/spread/cmd/spread@latest
       - name: Run Spread task
         shell: bash
         run: |
