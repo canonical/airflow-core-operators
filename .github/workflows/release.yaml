@@ -1,0 +1,55 @@
+name: Promote all charms
+
+on:
+  workflow_dispatch:
+    inputs:
+      origin-channel:
+        description: Origin channel
+        required: true
+        default: latest/edge
+      destination-channel:
+        description: Destination channel
+        required: true
+        default: latest/beta
+
+jobs:
+  list-of-charms:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate charm matrix
+        id: gen
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHARM_DIRS=$(find charms -mindepth 1 -maxdepth 1 -type d -print)
+          MATRIX=$(printf '%s\n' "$CHARM_DIRS" | jq -R . | jq -s '{include: map({charm_path: .})}')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  promote:
+    needs: list
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.list-of-charms.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute charm name
+        id: name
+        shell: bash
+        run: echo "charm_name=$(basename '${{ matrix.charm_path }}')" >> "$GITHUB_OUTPUT"
+
+      - name: Promote charm
+        uses: canonical/charming-actions/release-charm@2.6.2
+        with:
+          credentials: ${{ secrets.CHARMCRAFT_CREDENTIALS }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          origin-channel: ${{ inputs.origin-channel }}
+          destination-channel: ${{ inputs.destination-channel }}
+          tag-prefix: ${{ steps.name.outputs.charm_name }}
+          charm-path: ${{ matrix.charm_path }}
