@@ -88,7 +88,8 @@ jobs:
           go-version: "1.22.x"
       - name: Install spread
         run: |
-          sudo snap install spread --classic
+          sudo snap install go --classic
+          go install github.com/snapcore/spread/cmd/spread@latest
       - name: Run Spread task
         shell: bash
         run: |
@@ -98,5 +99,5 @@ jobs:
           TASK="${{ matrix.task_dir }}"
 
           echo "Running Spread task: ${SUITE}/${TASK}"
-          ~/snap/bin/spread "${SUITE}/${TASK}"
+          ~/go/bin/spread "${SUITE}/${TASK}"
   
