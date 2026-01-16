@@ -38,9 +38,11 @@ class AirflowSchedulerCharm(ops.CharmBase):
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
 
-        framework.observe(
-            self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile
-        )
+        for event in [
+            self.on[constants.CONTAINER_NAME].pebble_ready,
+            self.on[constants.AIRFLOW_COORDINATOR_RELATION_NAME].relation_broken,
+        ]:
+            framework.observe(event, self._reconcile)
 
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
 
@@ -62,11 +64,53 @@ class AirflowSchedulerCharm(ops.CharmBase):
                     "override": "replace",
                     "summary": "The airflow scheduler service.",
                     "command": "airflow scheduler",
-                    "startup": "enabled",
+                    "startup": "disabled",
                 }
             }
         }
         return layer
+
+    def _start_service(self) -> None:
+        """Start the scheduler service if not already running."""
+        try:
+            services = self._container.get_services()
+            service = services.get(constants.SERVICE_NAME)
+
+            # Only start if service is not already active
+            if not service or service.current != ops.pebble.ServiceStatus.ACTIVE:
+                logger.info(f"Starting {constants.SERVICE_NAME} service")
+                self._container.start(constants.SERVICE_NAME)
+
+        except ops.pebble.APIError as e:
+            raise ExitWithStatusError(
+                "Failed to start service: Pebble API error",
+                ops.BlockedStatus,
+            ) from e
+
+    def _stop_service(self) -> None:
+        """Stop the scheduler service if running."""
+        try:
+            # Stop service if it's running
+            services = self._container.get_services()
+            service = services.get(constants.SERVICE_NAME)
+
+            if service and service.current == ops.pebble.ServiceStatus.ACTIVE:
+                logger.info(f"Stopping {constants.SERVICE_NAME} service")
+                self._container.stop(constants.SERVICE_NAME)
+
+        except ops.pebble.APIError as e:
+            raise ExitWithStatusError(
+                "Failed to stop service: Pebble API error",
+                ops.BlockedStatus,
+            ) from e
+
+    def _remove_airflow_home(self) -> None:
+        """Remove the Airflow home directory."""
+        # Remove config file
+        config_path = f"{constants.AIRFLOW_HOME}/"
+        if self._container.exists(config_path):
+            logger.info("Removing airflow home...")
+            self._container.remove_path(config_path, recursive=True)
 
     def _check_container_can_connect(self) -> None:
         """Verify connection to the container; otherwise raise."""
@@ -75,34 +119,43 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 "Cannot connect to workload container", ops.MaintenanceStatus
             )
 
-    def _check_required_relation(self) -> None:
-        """Verify the coordinator relation exists, otherwise raise."""
+    def _check_required_relation_and_act(self) -> None:
+        """Verify the coordinator relation exists, otherwise raise.
+
+        If the relation does not exist, the charm will attempt to
+        stop the service (if started) and remove the airflow
+        home directory (if present).
+
+        Raises:
+            ExitWithStatusError: If the relation with the airflow coordinator
+                charm is not present.
+        """
         relation = self.model.get_relation(constants.AIRFLOW_COORDINATOR_RELATION_NAME)
         if not relation:
+            # Always attempt to stop the service and remove the airflow home
+            # if the relation is not present
+            self._stop_service()
+            self._remove_airflow_home()
             raise ExitWithStatusError(
                 "Missing airflow-coordinator relation", ops.BlockedStatus
             )
 
-    def _check_relation_ready_and_can_write_config(self) -> None:
-        """Verify the relation is ready and Airflow config can be written, otherwise raise.
+    def _check_validation_failures_and_can_write_config(self) -> None:
+        """Verify validation failures and if Airflow config can be written, otherwise raise.
 
         Raises:
             ExitWithStatusError: If the coordinator is yet to provide config data.
-                This could be due to validation issues for this component, missing other components,
-                or the coordinator still preparing the configuration.
+                This could be due to validation issues for this component,
+                missing other components, or the coordinator still preparing the configuration.
         """
         # Check if THIS component has validation failures
         if self.config_requires.validation_failure_messages:
-            raise ExitWithStatusError(
-                "Waiting for relation data", ops.WaitingStatus
-            )
+            raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
 
         # Check if we can write the config
         # If not, the coordinator hasn't provided config yet (temporary condition)
         if not self.config_requires.can_write_airflow_config:
-            raise ExitWithStatusError(
-                "Waiting for relation data", ops.WaitingStatus
-            )
+            raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
 
     def _write_airflow_config(self, config_path) -> None:
         """Write the airflow configuration file inside the workload container given a path."""
@@ -120,32 +173,38 @@ class AirflowSchedulerCharm(ops.CharmBase):
             ) from e
 
     def _add_layer_and_replan(self) -> None:
-        """Add the Pebble layer and replan the services only when needed."""
+        """Add the Pebble layer, replan, and start the service.
+
+        Since startup is disabled, we must explicitly start the service.
+
+        Raises:
+            ExitWithStatusError: If the service cannot be replanned.
+        """
         current_services = self._container.get_plan().to_dict().get("services", {})
         desired_services = self._airflow_scheduler_layer.get("services", {})
 
-        if current_services == desired_services:
-            return
+        if current_services != desired_services:
+            self._container.add_layer(
+                "scheduler-base", self._airflow_scheduler_layer, combine=True
+            )
 
-        self._container.add_layer(
-            "scheduler-base", self._airflow_scheduler_layer, combine=True
-        )
+            try:
+                self._container.replan()
+            except ops.pebble.ChangeError as e:
+                raise ExitWithStatusError(
+                    "Failed to replan Pebble services",
+                    ops.BlockedStatus,
+                ) from e
 
-        try:
-            self._container.replan()
-        except ops.pebble.ChangeError as e:
-            raise ExitWithStatusError(
-                "Failed to replan Pebble services",
-                ops.BlockedStatus,
-            ) from e
+        # Explicitly start the service (idempotent)
+        self._start_service()
 
     def _reconcile(self, _) -> None:
         """Reconcile the state of the charm for any event by running all operations."""
-        # Try/except the actual operations of the reconciler
         try:
             self._check_container_can_connect()
-            self._check_required_relation()
-            self._check_relation_ready_and_can_write_config()
+            self._check_required_relation_and_act()
+            self._check_validation_failures_and_can_write_config()
             self._write_airflow_config(
                 config_path=f"{constants.AIRFLOW_HOME}/airflow.cfg"
             )
