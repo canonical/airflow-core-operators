@@ -38,11 +38,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
 
-        for event in [
-            self.on[constants.CONTAINER_NAME].pebble_ready,
-            self.on[constants.AIRFLOW_COORDINATOR_RELATION_NAME].relation_broken,
-        ]:
-            framework.observe(event, self._reconcile)
+        framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
 
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
 
@@ -71,16 +67,10 @@ class AirflowSchedulerCharm(ops.CharmBase):
         return layer
 
     def _start_service(self) -> None:
-        """Start the scheduler service if not already running."""
+        """Start the scheduler service (idempotent)."""
         try:
-            services = self._container.get_services()
-            service = services.get(constants.SERVICE_NAME)
-
-            # Only start if service is not already active
-            if not service or service.current != ops.pebble.ServiceStatus.ACTIVE:
-                logger.info(f"Starting {constants.SERVICE_NAME} service")
-                self._container.start(constants.SERVICE_NAME)
-
+            logger.info(f"Starting {constants.SERVICE_NAME} service")
+            self._container.start(constants.SERVICE_NAME)
         except ops.pebble.APIError as e:
             raise ExitWithStatusError(
                 "Failed to start service: Pebble API error",
@@ -88,16 +78,10 @@ class AirflowSchedulerCharm(ops.CharmBase):
             ) from e
 
     def _stop_service(self) -> None:
-        """Stop the scheduler service if running."""
+        """Stop the scheduler service (idempotent)."""
         try:
-            # Stop service if it's running
-            services = self._container.get_services()
-            service = services.get(constants.SERVICE_NAME)
-
-            if service and service.current == ops.pebble.ServiceStatus.ACTIVE:
-                logger.info(f"Stopping {constants.SERVICE_NAME} service")
-                self._container.stop(constants.SERVICE_NAME)
-
+            logger.info(f"Stopping {constants.SERVICE_NAME} service")
+            self._container.stop(constants.SERVICE_NAME)
         except ops.pebble.APIError as e:
             raise ExitWithStatusError(
                 "Failed to stop service: Pebble API error",
@@ -107,7 +91,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
     def _remove_airflow_home(self) -> None:
         """Remove the Airflow home directory."""
         # Remove config file
-        config_path = f"{constants.AIRFLOW_HOME}/"
+        config_path = constants.AIRFLOW_HOME
         if self._container.exists(config_path):
             logger.info("Removing airflow home...")
             self._container.remove_path(config_path, recursive=True)
@@ -140,25 +124,20 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 "Missing airflow-coordinator relation", ops.BlockedStatus
             )
 
-    def _check_validation_failures_and_can_write_config(self) -> None:
-        """Verify validation failures and if Airflow config can be written, otherwise raise.
+    def _write_airflow_config(self, config_path) -> None:
+        """Write the airflow configuration file inside the workload container given a path.
+
+        This method checks if the configuration can be written; otherwise raises.
 
         Raises:
-            ExitWithStatusError: If the coordinator is yet to provide config data.
-                This could be due to validation issues for this component,
-                missing other components, or the coordinator still preparing the configuration.
+            ExitWithStatusError: if the configuration cannot be written or if
+                the operation failed due to issues with the write operation.
         """
-        # Check if THIS component has validation failures
-        if self.config_requires.validation_failure_messages:
-            raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
-
         # Check if we can write the config
         # If not, the coordinator hasn't provided config yet (temporary condition)
         if not self.config_requires.can_write_airflow_config:
             raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
 
-    def _write_airflow_config(self, config_path) -> None:
-        """Write the airflow configuration file inside the workload container given a path."""
         try:
             self.config_requires.write_airflow_config(config_path=config_path)
         except (ops.pebble.ConnectionError, ops.pebble.Error) as e:
@@ -180,21 +159,17 @@ class AirflowSchedulerCharm(ops.CharmBase):
         Raises:
             ExitWithStatusError: If the service cannot be replanned.
         """
-        current_services = self._container.get_plan().to_dict().get("services", {})
-        desired_services = self._airflow_scheduler_layer.get("services", {})
+        self._container.add_layer(
+            "scheduler-base", self._airflow_scheduler_layer, combine=True
+        )
 
-        if current_services != desired_services:
-            self._container.add_layer(
-                "scheduler-base", self._airflow_scheduler_layer, combine=True
-            )
-
-            try:
-                self._container.replan()
-            except ops.pebble.ChangeError as e:
-                raise ExitWithStatusError(
-                    "Failed to replan Pebble services",
-                    ops.BlockedStatus,
-                ) from e
+        try:
+            self._container.replan()
+        except ops.pebble.ChangeError as e:
+            raise ExitWithStatusError(
+                "Failed to replan Pebble services",
+                ops.BlockedStatus,
+            ) from e
 
         # Explicitly start the service (idempotent)
         self._start_service()
@@ -204,9 +179,8 @@ class AirflowSchedulerCharm(ops.CharmBase):
         try:
             self._check_container_can_connect()
             self._check_required_relation_and_act()
-            self._check_validation_failures_and_can_write_config()
             self._write_airflow_config(
-                config_path=f"{constants.AIRFLOW_HOME}/airflow.cfg"
+                config_path=constants.AIRFLOW_CONFIG_PATH,
             )
             self._add_layer_and_replan()
         except ExitWithStatusError as e:
