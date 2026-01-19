@@ -41,6 +41,34 @@ def test_missing_relation_status_scenario(context, state, container):
     )
 
 
+def test_missing_relation_with_cleanup_scenario(context, state, container):
+    """Test cleanup happens when relation is missing and config exists."""
+    state_in = dataclasses.replace(state, relations=[])
+    with (
+        unittest.mock.patch("ops.model.Container.stop", autospec=True) as stop_mock,
+        unittest.mock.patch(
+            "ops.model.Container.exists", autospec=True, return_value=True
+        ),
+        unittest.mock.patch(
+            "ops.model.Container.remove_path", autospec=True
+        ) as remove_mock,
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    # Verify service stop was called
+    stop_mock.assert_called_once()
+
+    # Verify config cleanup was called with correct parameters
+    remove_mock.assert_called_once()
+    call_args = remove_mock.call_args
+    # Check that recursive=False was passed
+    assert call_args.kwargs.get("recursive") == False
+
+    assert state_out.unit_status == ops.BlockedStatus(
+        "Missing airflow-coordinator relation"
+    )
+
+
 def test_cannot_write_airflow_config_scenario(
     context, state, container, scheduler_relation
 ):
