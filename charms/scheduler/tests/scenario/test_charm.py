@@ -133,7 +133,7 @@ def test_replan_failure_scenario(context, state, container, scheduler_relation):
 
 
 def test_active_status_flow_scenario(context, state, container, scheduler_relation):
-    """Test full flow to ActiveStatus with explicit service start."""
+    """Test full flow to ActiveStatus (service starts automatically on replan)."""
     state_in = dataclasses.replace(state, relations=[scheduler_relation])
     with (
         unittest.mock.patch.object(
@@ -146,16 +146,14 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
             AirflowCoordinatorRequires, "write_airflow_config", return_value=None
         ),
         unittest.mock.patch("ops.model.Container.replan", autospec=True) as replan_mock,
-        unittest.mock.patch("ops.model.Container.start", autospec=True) as start_mock,
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
     assert state_out.unit_status == ops.ActiveStatus()
     replan_mock.assert_called_once()
-    start_mock.assert_called_once()
 
     out_container = state_out.get_container("airflow-scheduler")
     plan = out_container.layers["scheduler-base"]
     assert "airflow" in plan.services
     assert plan.services["airflow"].command == "airflow scheduler"
-    assert plan.services["airflow"].startup == "disabled"
+    assert plan.services["airflow"].startup == "enabled"

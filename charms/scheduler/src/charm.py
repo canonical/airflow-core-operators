@@ -60,22 +60,11 @@ class AirflowSchedulerCharm(ops.CharmBase):
                     "override": "replace",
                     "summary": "The airflow scheduler service.",
                     "command": "airflow scheduler",
-                    "startup": "disabled",
+                    "startup": "enabled",
                 }
             }
         }
         return layer
-
-    def _start_service(self) -> None:
-        """Start the scheduler service (idempotent)."""
-        try:
-            logger.info(f"Starting {constants.SERVICE_NAME} service")
-            self._container.start(constants.SERVICE_NAME)
-        except ops.pebble.APIError as e:
-            raise ExitWithStatusError(
-                "Failed to start service: Pebble API error",
-                ops.BlockedStatus,
-            ) from e
 
     def _stop_service(self) -> None:
         """Stop the scheduler service (idempotent)."""
@@ -152,9 +141,9 @@ class AirflowSchedulerCharm(ops.CharmBase):
             ) from e
 
     def _add_layer_and_replan(self) -> None:
-        """Add the Pebble layer, replan, and start the service.
+        """Add the Pebble layer and replan.
 
-        Since startup is disabled, we must explicitly start the service.
+        The service will start automatically since startup is enabled.
 
         Raises:
             ExitWithStatusError: If the service cannot be replanned.
@@ -170,9 +159,6 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
             ) from e
-
-        # Explicitly start the service (idempotent)
-        self._start_service()
 
     def _reconcile(self, _) -> None:
         """Reconcile the state of the charm for any event by running all operations."""
