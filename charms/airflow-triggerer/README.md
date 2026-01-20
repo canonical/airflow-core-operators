@@ -15,7 +15,7 @@ The Airflow Triggerer charm:
 - Receives rendered Airflow configuration and secrets from the Airflow Coordinator
 - Participates as one of the Airflow core components alongside:
   - Scheduler
-  - Triggerer
+  - API Server
   - DAG Processor
 
 # Usage
