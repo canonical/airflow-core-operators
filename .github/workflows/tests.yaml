@@ -50,54 +50,43 @@ jobs:
         working-directory: ${{ matrix.directory }}
         run: uv tool run tox -e unit
 
-  discover-spread-tasks:
+  discover-integration-tasks:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.out.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate Spread test matrix
+      - name: Generate integration test matrix
         id: out
         shell: bash
         run: |
-          SUITE_ROOT="tests/integration/spread"
+          FILES=$(ls -1 tests/integration/test_*.py 2>/dev/null || true)
 
-          if [ ! -d "$SUITE_ROOT" ]; then
+          if [ -z "$FILES" ]; then
             echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          TASK_DIRS=$(ls ${SUITE_ROOT}/*/task.yaml | cut -d / -f 4)
-          MATRIX=$(printf '%s\n' "$TASK_DIRS" | jq -R . | jq -s '{include: map({task_dir: .})}')
 
+          MATRIX=$(printf '%s\n' $FILES | jq -R . | jq -s '{include: map({test_file: .})}')
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
-  spread-tests:
-    needs: discover-spread-tasks
+  integration-tests:
+    needs: [lint, unit-tests, discover-integration-tasks]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.discover-spread-tasks.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.discover-integration-tasks.outputs.matrix) }}
 
-    if: ${{ needs.discover-spread-tasks.outputs.matrix != '{"include":[]}' }}
+    if: ${{ needs.discover-integration-tasks.outputs.matrix != '{"include":[]}' }}
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          go-version: "1.22.x"
-      - name: Install spread
-        run: |
-          sudo snap install go --classic
-          go install github.com/snapcore/spread/cmd/spread@latest
-      - name: Run Spread task
-        shell: bash
-        run: |
-          set -euo pipefail
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install
 
-          SUITE="tests/integration/spread"
-          TASK="${{ matrix.task_dir }}"
-
-          echo "Running Spread task: ${SUITE}/${TASK}"
-          ~/go/bin/spread "${SUITE}/${TASK}"
-  
+      - name: Run integration test file
+        run: uv tool run tox -e integration -- ${{ matrix.test_file }}
