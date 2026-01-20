@@ -1,6 +1,6 @@
 type: charm
 name: airflow-triggerer-k8s
-title: Charm Template
+title: Airflow Triggerer Charm
 summary: A charm that deploys and manages the Apache Airflow Triggerer
 description: |
   The Triggerer runs an asynchronous event loop that executes trigger code and fires events back to the scheduler when conditions are met.

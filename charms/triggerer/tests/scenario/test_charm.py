@@ -63,7 +63,7 @@ def test_missing_relation_with_cleanup_config_exists_scenario(context, state, co
 def test_stop_service_pebble_api_error_scenario(context, state, container):
     """When relation is missing and stopping the service raises Pebble APIError.
 
-    Charm goes Blocked with "Missing airflow-coordinator relation; failed to stop service."
+    Charm goes Blocked with "Failed to stop service"
     """
     state_in = dataclasses.replace(state, relations=[])
 
@@ -81,9 +81,7 @@ def test_stop_service_pebble_api_error_scenario(context, state, container):
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
-    assert state_out.unit_status == ops.BlockedStatus(
-        "Missing airflow-coordinator relation; failed to stop service."
-    )
+    assert state_out.unit_status == ops.BlockedStatus("Failed to stop service")
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     assert "triggerer-base" not in out_container.layers
@@ -104,9 +102,7 @@ def test_waiting_when_cannot_write_airflow_config(context, state, container, tri
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
-    assert state_out.unit_status == ops.WaitingStatus(
-        "Waiting for relation data from coordinator."
-    )
+    assert state_out.unit_status == ops.WaitingStatus("Waiting for relation data from coordinator")
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     assert "triggerer-base" not in out_container.layers
@@ -164,7 +160,7 @@ def test_failed_airflow_config_write_generic_exception_scenario(
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
     assert state_out.unit_status == ops.BlockedStatus(
-        "Failed to write config file to workload container."
+        "Failed to write config file to workload container"
     )
 
 
