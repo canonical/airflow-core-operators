@@ -77,12 +77,12 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 ops.BlockedStatus,
             ) from e
 
-    def _cleanup_airflow_home(self) -> None:
-        """Cleanup the Airflow home directory."""
+    def _cleanup_airflow_home_contents(self) -> None:
+        """Cleanup the contents of the Airflow home directory."""
         # Remove config file
         config_path = constants.AIRFLOW_CONFIG_PATH
         if self._container.exists(config_path):
-            logger.info("Removing airflow home...")
+            logger.info("Cleaning up contents of Airflow home...")
             self._container.remove_path(config_path, recursive=False)
 
     def _check_container_can_connect(self) -> None:
@@ -108,7 +108,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
             # Always attempt to stop the service and remove the airflow home
             # if the relation is not present
             self._stop_service()
-            self._cleanup_airflow_home()
+            self._cleanup_airflow_home_contents()
             raise ExitWithStatusError(
                 "Missing airflow-coordinator relation", ops.BlockedStatus
             )

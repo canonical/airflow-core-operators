@@ -185,3 +185,22 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
     assert "airflow" in plan.services
     assert plan.services["airflow"].command == "airflow scheduler"
     assert plan.services["airflow"].startup == "enabled"
+
+
+def test_stop_service_pebble_api_error_scenario(context, state, container):
+    """Test BlockedStatus when stopping service fails with Pebble API error."""
+    state_in = dataclasses.replace(state, relations=[])
+    with (
+        unittest.mock.patch(
+            "ops.model.Container.stop",
+            autospec=True,
+            side_effect=ops.pebble.APIError(
+                body={}, code=500, status="Internal Server Error", message="API error"
+            ),
+        ),
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.BlockedStatus(
+        "Failed to stop service: Pebble API error"
+    )
