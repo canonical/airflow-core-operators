@@ -1,6 +1,6 @@
 type: charm
 name: airflow-dag-processor-k8s
-title: Charm Template
+title: Airflow DAG Processor Charm
 summary: A charm that deploys and manages the Apache Airflow DAG processor
 description: |
   The DAG processor continuously scans the DAGs folder, parses Python files to discover DAG definitions.
