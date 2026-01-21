@@ -2,20 +2,22 @@ name: CI
 
 on:
   pull_request:
-  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-
   lint:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         directory:
-          - charms/airflow-api-server
-          - charms/airflow-scheduler
-          - charms/airflow-dag-processor
-          - charms/airflow-triggerer
+          - charms/api-server
+          - charms/scheduler
+          - charms/dag-processor
+          - charms/triggerer
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -34,10 +36,10 @@ jobs:
       fail-fast: false
       matrix:
         directory:
-          - charms/airflow-api-server
-          - charms/airflow-scheduler
-          - charms/airflow-dag-processor
-          - charms/airflow-triggerer
+          - charms/api-server
+          - charms/scheduler
+          - charms/dag-processor
+          - charms/triggerer
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -56,7 +58,6 @@ jobs:
       matrix: ${{ steps.out.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Generate integration test matrix
         id: out
         shell: bash
@@ -67,7 +68,6 @@ jobs:
             echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           MATRIX=$(printf '%s\n' $FILES | jq -R . | jq -s '{include: map({test_file: .})}')
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
@@ -77,7 +77,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.discover-integration-tasks.outputs.matrix) }}
-
     if: ${{ needs.discover-integration-tasks.outputs.matrix != '{"include":[]}' }}
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +86,5 @@ jobs:
           enable-cache: true
       - name: Set up Python
         run: uv python install
-
       - name: Run integration test file
         run: uv tool run tox -e integration -- ${{ matrix.test_file }}

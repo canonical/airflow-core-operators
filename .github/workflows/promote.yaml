@@ -1,16 +1,31 @@
-name: Promote all charms
+name: Promote charms
 
 on:
   workflow_dispatch:
     inputs:
+      charm-name:
+        description: Which charm to promote (or "all")
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - api-server
+          - scheduler
+          - dag-processor
+          - triggerer
       origin-channel:
         description: Origin channel
         required: true
-        default: latest/edge
+        default: 3.1/edge
       destination-channel:
         description: Destination channel
         required: true
-        default: latest/beta
+        default: 3.1/beta
+
+concurrency:
+  group: promote-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   list-of-charms:
@@ -19,31 +34,31 @@ jobs:
       matrix: ${{ steps.gen.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Generate charm matrix
         id: gen
         shell: bash
         run: |
           set -euo pipefail
-
-          CHARM_DIRS=$(find charms -mindepth 1 -maxdepth 1 -type d -print)
-          MATRIX=$(printf '%s\n' "$CHARM_DIRS" | jq -R . | jq -s '{include: map({charm_path: .})}')
+          if [ "${{ inputs.charm-name }}" = "all" ]; then
+            CHARM_DIRS=$(find charms -mindepth 1 -maxdepth 1 -type d)
+          else
+            CHARM_DIRS="charms/${{ inputs.charm-name }}"
+          fi
+          MATRIX=$(printf '%s\n' $CHARM_DIRS | jq -R . | jq -s '{include: map({charm_path: .})}')
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   promote:
-    needs: list
+    needs: list-of-charms
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.list-of-charms.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Compute charm name
+      - name: Compute Tag Prefix
         id: name
         shell: bash
-        run: echo "charm_name=$(basename '${{ matrix.charm_path }}')" >> "$GITHUB_OUTPUT"
-
+        run: echo "tag_prefix=$(basename '${{ matrix.charm_path }}')" >> "$GITHUB_OUTPUT"
       - name: Promote charm
         uses: canonical/charming-actions/release-charm@2.6.2
         with:
@@ -51,5 +66,5 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           origin-channel: ${{ inputs.origin-channel }}
           destination-channel: ${{ inputs.destination-channel }}
-          tag-prefix: ${{ steps.name.outputs.charm_name }}
+          tag-prefix: ${{ steps.name.outputs.tag_prefix }}
           charm-path: ${{ matrix.charm_path }}

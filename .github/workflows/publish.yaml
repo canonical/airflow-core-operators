@@ -2,7 +2,8 @@ name: Publish changed charms
 
 on:
   push:
-    branches: ["track/*"]
+    branches:
+      - "track/*"
 
 jobs:
   get-modified-charms:
@@ -41,6 +42,6 @@ jobs:
           credentials: ${{ secrets.CHARMCRAFT_CREDENTIALS }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           charm-path: ${{ matrix.charm_path }}
-          channel: latest/edge
+          channel: 3.1/edge
           tag-prefix: ${{ steps.meta.outputs.tag_prefix }}
           charmcraft-channel: 3.x/stable
