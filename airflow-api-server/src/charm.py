@@ -12,11 +12,10 @@ from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordin
 logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "airflow"
-CONTAINER_NAME = "airflow-api-server"  # Name of the workload container.
-AIRFLOW_COMPONENT = "dag-processor"
+CONTAINER_NAME = "airflow-api-server"
+AIRFLOW_COMPONENT = "api-server"
 AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-coordinator"
 AIRFLOW_HOME = "/opt/airflow"
-
 
 class ExitWithStatusError(Exception):
     """Exception raised to exit with a specific status."""
@@ -39,6 +38,7 @@ class AirflowApiServerCharm(ops.CharmBase):
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
         framework.observe(self.on[CONTAINER_NAME].pebble_ready, self._reconcile)
+        framework.observe(self.on[AIRFLOW_COORDINATOR_RELATION_NAME].relation_broken, self._reconcile)
         self.container = self.unit.get_container(CONTAINER_NAME)
 
         self.config_requires = AirflowCoordinatorRequires(
@@ -59,13 +59,13 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _check_required_relations(self) -> None:
         """Check if all required relations are established."""
-        if not self.model.get_relation(AIRFLOW_COORDINATOR_RELATION_NAME):
+        relation = self.model.get_relation(AIRFLOW_COORDINATOR_RELATION_NAME) # Added this line to get the relation object
+        if not relation:
             raise ExitWithStatusError(
                 f"Missing airflow-coordinator relation",
                 ops.BlockedStatus,
             )
-
-        if not self.config_requires.ready:
+        if not self.config_requires._ready:
             raise ExitWithStatusError(
                 "Waiting for relation data",
                 ops.WaitingStatus,
@@ -73,17 +73,14 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _write_airflow_config(self, config_path) -> None:
         """Write configuration files to the workload container."""
-
         if not self.config_requires.can_write_airflow_config:
             raise ExitWithStatusError(
-                "Cannot write airflow config: missing relation data",
-                ops.WaitingStatus,
+                "Cannot write airflow config: missing Sensitive Data",
+                ops.BlockedStatus,
             )
-            return
         try:
             self.config_requires.write_airflow_config(config_path=config_path)
         except Exception as e:
-            logger.error("failed to write airflow config: %s", e)
             raise ExitWithStatusError(
                 "Failed to write to config file to workload container",
                 ops.BlockedStatus,
@@ -97,7 +94,7 @@ class AirflowApiServerCharm(ops.CharmBase):
                 SERVICE_NAME: {
                     "override": "replace",
                     "summary": "A service that runs in the api-server workload container",
-                    "command": "airflow dag-processor",
+                    "command": "airflow api-server",
                     "startup": "enabled",
                 }
             }
@@ -110,7 +107,6 @@ class AirflowApiServerCharm(ops.CharmBase):
         try:
             self.container.replan()
         except ops.pebble.ChangeError as e:
-            logger.error("failed to replan Pebble services: %s", e)
             raise ExitWithStatusError(
                 "failed to replan Pebble services",
                 ops.BlockedStatus,
