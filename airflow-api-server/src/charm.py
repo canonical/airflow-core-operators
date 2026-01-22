@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+# Copyright 2025 Ubuntu
+# See LICENSE file for licensing details.
+
+"""Charm the application."""
+import logging
+import time
+import ops
+# import airflow_api_server
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+
+
+logger = logging.getLogger(__name__)
+
+SERVICE_NAME = CONTAINER_NAME = "airflow-api-server"  # Name of the workload container.
+AIRFLOW_COMPONENT = "api-server"
+AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-corrdinator"
+AIRFLOW_HOME = "/opt/airflow"
+
+class ExitWithStatusError(Exception):
+    """Exception raised to exit with a specific status."""
+
+    def __init__(self, msg: str, status_type):
+        """Initialize the exception with a status."""
+        super().__init__(str(msg))
+        self.msg = str(msg)
+        self.status = status
+
+    @property
+    def status(self):
+        """Get the status."""
+        return self._status_type(self.msg)
+
+class AirflowApiServerCharm(ops.CharmBase):
+    """Charm the application."""
+
+    def __init__(self, framework: ops.Framework):
+        super().__init__(framework)
+        framework.observe(self.on[CONTAINER_NAME].pebble_ready, self._on_pebble_ready)
+        self.container = self.unit.get_container(CONTAINER_NAME)
+
+        self.config_requires = AirflowCoordinatorRequires(
+            charm = self,
+            relation_name = AIRFLOW_COORDINATOR_RELATION_NAME,
+            component = AIRFLOW_COMPONENT,
+            workload_container = CONTAINER_NAME,
+            callback = self._reconcile)
+    
+    def _check_pebble_connection(self) -> None:
+        """Check if we can connect to the Pebble API."""
+        if not self.container.can_connect():
+            raise ExitWithStatusError(
+                "Cannot connect to workload container",
+                ops.MaintenanceStatus,
+            )
+    
+    def _check_required_relations(self) -> None:
+        """Check if all required relations are established."""
+        if not self.config_requires.ready():
+            raise ExitWithStatusError(
+                "Waiting for required relations to be established",
+                ops.MaintenanceStatus,
+            )
+        
+    def _write_airflow_config(self, config_path) -> None:
+        """Write configuration files to the workload container."""
+        if not self.config_requires.ready():
+            raise ExitWithStatusError(
+                "Cannot write to config file; required relations are not established",
+                ops.MaintenanceStatus,
+            )
+        
+        if not self.config_requires.write_airflow_config(config_path = config_path):
+            raise ExitWithStatusError(
+                "Failed to write to config file to workload container",
+                ops.BlockedStatus,
+            )
+        
+    @property
+    def _api_server_layer(self) -> ops.pebble.LayerDict:
+        """Define the Pebble layer for the workload container."""
+        layer: ops.pebble.LayerDict = {
+            "services": {
+                SERVICE_NAME: {
+                    "override": "replace",
+                    "summary": "A service that runs in the workload container",
+                    "command": "airflow api-server",  
+                    "startup": "enabled",
+                    "user": "airflow",
+                    "group": "airflow"
+                }
+            }
+        }
+        return layer
+       
+    def _add_layer_and_replan(self) -> None:
+        """Add the Pebble layer and replan the services."""
+        self.container.add_layer("api-server-base", self._api_server_layer, combine=True)
+        try:
+            self.container.replan()
+        except ops.pebble.ChangeError as e:
+            logger.error("failed to replan Pebble services: %s", e)
+            raise ExitWithStatusError(
+                "failed to replan Pebble services",
+                ops.BlockedStatus,
+            )
+    
+    def _reconcile(self) -> None:
+        """Reconcile the charm state."""
+        try:
+            self.container._check_pebble_connection()
+            self._check_required_relations(relation_name = AIRFLOW_COORDINATOR_RELATION_NAME)
+            self._write_airflow_config(config_path = "$AIRFOW_HOME/airflow.cfg")
+            self._add_layer_and_replan()
+        except ExitWithStatusError as e:
+            self.unit.status = e.status
+            return
+        self.unit.status = ops.ActiveStatus()
+
+
+if __name__ == "__main__":  # pragma: nocover
+    ops.main(AirflowApiServerCharm)
