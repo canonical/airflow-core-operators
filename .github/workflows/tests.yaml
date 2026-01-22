@@ -1,11 +1,21 @@
-name: CI
+name: tests
 
 on:
   pull_request:
+  workflow_call:
+    inputs:
+      directories:
+        required: false
+        type: string
+        default: '["charms/api-server","charms/scheduler","charms/dag-processor","charms/triggerer"]'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  DEFAULT_DIRECTORIES: '["charms/api-server","charms/scheduler","charms/dag-processor","charms/triggerer"]'
+
 
 jobs:
   lint:
@@ -13,19 +23,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        directory:
-          - charms/api-server
-          - charms/scheduler
-          - charms/dag-processor
-          - charms/triggerer
+        directory: ${{ fromJSON(inputs.directories || env.DEFAULT_DIRECTORIES) }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Set up Python
-        run: uv python install
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo snap install astral-uv --classic
+          uv tool install tox
+
       - name: Run Linter
         working-directory: ${{ matrix.directory }}
         run: uv tool run tox -e lint
@@ -35,19 +42,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        directory:
-          - charms/api-server
-          - charms/scheduler
-          - charms/dag-processor
-          - charms/triggerer
+        directory: ${{ fromJSON(inputs.directories || env.DEFAULT_DIRECTORIES) }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Set up Python
-        run: uv python install
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo snap install astral-uv --classic
+          uv tool install tox
+
       - name: Run Tests
         working-directory: ${{ matrix.directory }}
         run: uv tool run tox -e unit
@@ -57,7 +61,8 @@ jobs:
     outputs:
       matrix: ${{ steps.out.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v5
       - name: Generate integration test matrix
         id: out
         shell: bash
@@ -79,12 +84,28 @@ jobs:
       matrix: ${{ fromJSON(needs.discover-integration-tasks.outputs.matrix) }}
     if: ${{ needs.discover-integration-tasks.outputs.matrix != '{"include":[]}' }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Set up Python
-        run: uv python install
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install dependencies (concierge)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get purge -y $(dpkg -l | grep -i docker | awk '{print $2}') || true
+          sudo apt-get purge -y containerd.io || true
+          sudo rm -rf /run/containerd || true
+
+          sudo snap install concierge --classic
+          sudo snap install just --classic
+
+          sudo -E concierge prepare -p k8s --extra-snaps=astral-uv
+
+          mkdir -p ~/.kube
+          sudo k8s kubectl config view --raw > ~/.kube/config
+
+          uv tool install tox
+
       - name: Run integration test file
         run: uv tool run tox -e integration -- ${{ matrix.test_file }}

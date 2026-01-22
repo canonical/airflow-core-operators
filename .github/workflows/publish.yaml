@@ -1,4 +1,4 @@
-name: Publish changed charms
+name: Publish charms
 
 on:
   push:
@@ -15,20 +15,71 @@ jobs:
       search-root: charms
     secrets: inherit
 
-  publish:
-    name: Publish changed charms
+  run-tests:
+    name: Unit + integration tests
+    needs: get-modified-charms
+    if: ${{ needs.get-modified-charms.outputs.paths != '[]' }}
+    uses: ./.github/workflows/tests.yaml
+    with:
+      directories: ${{ needs.get-modified-charms.outputs.paths }}
+    secrets: inherit
+
+  collect-build-matrix:
+    name: Collect charm build platforms
     needs: get-modified-charms
     if: ${{ needs.get-modified-charms.outputs.paths != '[]' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.out.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build publish matrix
+        id: out
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          paths='${{ needs.get-modified-charms.outputs.paths }}'
+          matrix='{"include":[]}'
+
+          for charm_path in $(echo "$paths" | jq -r '.[]'); do
+            cfg="$charm_path/charmcraft.yaml"
+            platforms=$(yq -o=json '.platforms | keys // ["amd64"]' "$cfg")
+
+            for platform in $(jq -r '.[]' <<< "$platforms"); do
+              case "$platform" in
+                amd64) runner="ubuntu-latest" ;;
+                arm64) runner="ubuntu-24.04-arm" ;;
+                *)
+                  echo "Unsupported platform '$platform' in $cfg" >&2
+                  exit 1
+                  ;;
+              esac
+
+              matrix=$(jq \
+                --arg charm_path "$charm_path" \
+                --arg platform "$platform" \
+                --arg runner "$runner" \
+                '.include += [{"charm_path":$charm_path,"platform":$platform,"runner":$runner}]' \
+                <<< "$matrix")
+            done
+          done
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish changed charms
+    needs: [get-modified-charms, run-tests, collect-build-matrix]
+    if: ${{ needs.get-modified-charms.outputs.paths != '[]' }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix:
-        charm_path: ${{ fromJSON(needs.get-modified-charms.outputs.paths) }}
+      matrix: ${{ fromJSON(needs.collect-build-matrix.outputs.matrix) }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - name: Compute tag prefix
         id: meta
