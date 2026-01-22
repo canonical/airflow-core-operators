@@ -21,9 +21,9 @@ The Airflow API Server charm:
 # Usage
 
 ```
-juju deploy airflow-scheduler-k8s
+juju deploy airflow-api-server-k8s
 juju deploy airflow-coordinator-k8s
-juju integrate airflow-scheduler-k8s airflow-coordinator-k8s
+juju integrate airflow-api-server-k8s airflow-coordinator-k8s
 ```
 - API server goes into BlockedStatus, when relation with `airflow-coordinator-k8s` is missing.
 - The charm stays in Waiting status until all required Airflow core charms are related to the coordinator and configuration has been generated.
