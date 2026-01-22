@@ -6,10 +6,7 @@
 
 import logging
 import ops
-
-from charms.airflow_coordinator_k8s.v0.airflow_coordinator import (
-    AirflowCoordinatorRequires,
-)
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
 
 
 
@@ -33,7 +30,7 @@ class ExitWithStatusError(Exception):
     @property
     def status(self):
         """Get the status."""
-        return self._status_type(self.msg)
+        return self.status_type(self.msg)
 
 
 class AirflowApiServerCharm(ops.CharmBase):
@@ -41,14 +38,14 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
-        framework.observe(self.on[CONTAINER_NAME].pebble_ready, self._on_pebble_ready)
+        framework.observe(self.on[CONTAINER_NAME].pebble_ready, self._reconcile)
         self.container = self.unit.get_container(CONTAINER_NAME)
 
         self.config_requires = AirflowCoordinatorRequires(
             charm=self,
             relation_name=AIRFLOW_COORDINATOR_RELATION_NAME,
             component=AIRFLOW_COMPONENT,
-            workload_container=CONTAINER_NAME,
+            workload_container=self.container,
             callback=self._reconcile,
         )
 
@@ -70,12 +67,6 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _write_airflow_config(self, config_path) -> None:
         """Write configuration files to the workload container."""
-        if not self.config_requires.ready():
-            raise ExitWithStatusError(
-                "Cannot write to config file; required relations are not established",
-                ops.MaintenanceStatus,
-            )
-
         if not self.config_requires.write_airflow_config(config_path=config_path):
             raise ExitWithStatusError(
                 "Failed to write to config file to workload container",
@@ -89,8 +80,8 @@ class AirflowApiServerCharm(ops.CharmBase):
             "services": {
                 SERVICE_NAME: {
                     "override": "replace",
-                    "summary": "A service that runs in the workload container",
-                    "command": "airflow api-server",
+                    "summary": "A service that runs in the api-server workload container",
+                    "command": "pip install pydantic && airflow api-server",
                     "startup": "enabled",
                     "user": "airflow",
                     "group": "airflow",
@@ -111,12 +102,12 @@ class AirflowApiServerCharm(ops.CharmBase):
                 ops.BlockedStatus,
             )
 
-    def _reconcile(self) -> None:
+    def _reconcile(self, _) -> None:
         """Reconcile the charm state."""
         try:
-            self.container._check_pebble_connection()
-            self._check_required_relations(relation_name=AIRFLOW_COORDINATOR_RELATION_NAME)
-            self._write_airflow_config(config_path="$AIRFOW_HOME/airflow.cfg")
+            self._check_pebble_connection()
+            self._check_required_relations()
+            self._write_airflow_config(config_path="$AIRFLOW_HOME/airflow.cfg")
             self._add_layer_and_replan()
         except ExitWithStatusError as e:
             self.unit.status = e.status
