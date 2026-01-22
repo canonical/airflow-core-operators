@@ -6,10 +6,9 @@ description: |
   The Airflow API Server charm deploys and configures the Airflow API Server component.
   It provides a RESTful interface to manage and monitor Airflow workflows (DAGs) programmatically.
 
-base: ubuntu@22.04
+base: ubuntu@24.04
 platforms:
   amd64:
-  arm64:
 
 parts:
   charm:

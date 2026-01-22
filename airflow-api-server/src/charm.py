@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 SERVICE_NAME = CONTAINER_NAME = "airflow-api-server"  # Name of the workload container.
 AIRFLOW_COMPONENT = "api-server"
-AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-corrdinator"
+AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-coordinator"
 AIRFLOW_HOME = "/opt/airflow"
 
 
