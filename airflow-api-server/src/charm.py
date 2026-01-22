@@ -39,16 +39,9 @@ class AirflowApiServerCharm(ops.CharmBase):
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
         framework.observe(self.on[CONTAINER_NAME].pebble_ready, self._reconcile)
-        for event in (
-            "relation_broken",
-            "relation_changed",
-            "relation_created",
-            "relation_joined",
-        ):
-            framework.observe(
-                getattr(self.on[AIRFLOW_COORDINATOR_RELATION_NAME], event),
-                self._reconcile,
-            )
+        framework.observe(
+            self.on[AIRFLOW_COORDINATOR_RELATION_NAME].relation_broken, self._reconcile
+        )
         self.container = self.unit.get_container(CONTAINER_NAME)
 
         self.config_requires = AirflowCoordinatorRequires(
