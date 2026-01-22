@@ -22,8 +22,8 @@ def test_missing_relation_status_scenario(context, state, container):
     assert state_out.unit_status == ops.BlockedStatus("Missing airflow-coordinator relation")
 
 
-def test_cannot_write_airflow_config_scenario(context, state, container, api_server_relation):
-    """Test status when relation exists but it's not yet safe to write config."""
+def test_cannot_write_airflow_config_disables_service(context, state, container, api_server_relation):
+    """When config isn't writable, charm should go Waiting and set startup=disabled."""
     state_in = dataclasses.replace(state, relations=[api_server_relation])
 
     with unittest.mock.patch.object(
@@ -34,9 +34,12 @@ def test_cannot_write_airflow_config_scenario(context, state, container, api_ser
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
-    assert state_out.unit_status == ops.WaitingStatus(
-        "Cannot write airflow config to workload container: Waiting for relation data"
-    )
+    assert state_out.unit_status == ops.WaitingStatus("Cannot write airflow config to workload container")
+
+    out_container = state_out.get_container("airflow-api-server")
+    layer = out_container.layers["api-server-base"]
+    assert layer.services[constants.SERVICE_NAME].startup == "disabled"
+
 
 
 def test_failed_airflow_config_write_scenario(context, state, container, api_server_relation):
@@ -63,9 +66,6 @@ def test_failed_airflow_config_write_scenario(context, state, container, api_ser
     )
 
 
-class _FakeChange:
-    tasks = []  # ChangeError.__str__ iterates over change.tasks
-
 
 def test_replan_failure_scenario(context, state, container, api_server_relation):
     """Test status when pebble replan fails."""
@@ -90,15 +90,9 @@ def test_replan_failure_scenario(context, state, container, api_server_relation)
 
     assert state_out.unit_status == ops.BlockedStatus("Failed to replan Pebble services")
 
-
 def test_active_status_flow_scenario(context, state, container, api_server_relation):
-    """Test full flow to ActiveStatus using the Scenario framework."""
+    """When relation exists + config is writable, charm should go Active and set startup=enabled."""
     state_in = dataclasses.replace(state, relations=[api_server_relation])
-
-    # Make layer comparison deterministic: start from an empty plan so we replan exactly once.
-    class _FakePlan:
-        def to_dict(self):
-            return {}
 
     with (
         unittest.mock.patch.object(
@@ -110,16 +104,13 @@ def test_active_status_flow_scenario(context, state, container, api_server_relat
         unittest.mock.patch.object(
             AirflowCoordinatorRequires, "write_airflow_config", return_value=None
         ),
-        unittest.mock.patch("ops.model.Container.get_plan", return_value=_FakePlan()),
-        unittest.mock.patch("ops.model.Container.replan", autospec=True) as replan_mock,
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
     assert state_out.unit_status == ops.ActiveStatus()
-    replan_mock.assert_called_once()
 
     out_container = state_out.get_container("airflow-api-server")
-    plan = out_container.layers["api-server-base"]
-    assert "airflow" in plan.services
-    assert plan.services["airflow"].command == "airflow api-server"
-    assert plan.services["airflow"].startup == "enabled"
+    layer = out_container.layers["api-server-base"]
+    assert constants.SERVICE_NAME in layer.services
+    assert layer.services[constants.SERVICE_NAME].command == "airflow api-server"
+    assert layer.services[constants.SERVICE_NAME].startup == "enabled"
