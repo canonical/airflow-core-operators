@@ -1,6 +1,6 @@
 type: charm
 name: airflow-api-server-k8s
-title: Charm Template
+title: API Server Charm
 summary: A charm that deploys and manages the Apache Airflow API server
 description: |
   The API server acts as the central access point for Airflow metadata and services,

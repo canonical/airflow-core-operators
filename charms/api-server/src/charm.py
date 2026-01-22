@@ -47,11 +47,11 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _stop_service_and_remove_config(self) -> None:
         try:
-            logger.info("Stopping service %s", constants.SERVICE_NAME)
+            logger.info(f"Stopping service {constants.SERVICE_NAME}")
             self._container.stop(constants.SERVICE_NAME)
         except ops.pebble.APIError:
             raise ExitWithStatusError(
-                "Missing airflow-coordinator relation; failed to stop service.",
+                "Failed to stop pebble service",
                 ops.BlockedStatus,
             )
         config_path = constants.AIRFLOW_CONFIG_PATH
@@ -59,7 +59,7 @@ class AirflowApiServerCharm(ops.CharmBase):
             self._container.remove_path(config_path, recursive=False)
 
     def _check_pebble_connection(self) -> None:
-        """Verify connection to the container; otherwise raise."""
+        """Verify connection to the container; otherwise raise"""
         if not self._container.can_connect():
             raise ExitWithStatusError(
                 "Cannot connect to workload container", ops.MaintenanceStatus
@@ -78,7 +78,7 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Write configuration files to the workload."""
         if not self._config_requires.can_write_airflow_config:
             raise ExitWithStatusError(
-                "Waiting for relation data from coordinator.",
+                "Waiting for relation data from coordinator",
                 ops.WaitingStatus,
             )
         try:
@@ -93,7 +93,7 @@ class AirflowApiServerCharm(ops.CharmBase):
             )
         except Exception:
             raise ExitWithStatusError(
-                "Failed to write config file to workload container.",
+                "Failed to write config file to workload container",
                 ops.BlockedStatus,
             )
 

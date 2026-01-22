@@ -56,7 +56,7 @@ def test_missing_relation_with_cleanup_config_exists_scenario(context, state, co
 def test_stop_service_pebble_api_error_scenario(context, state, container):
     """When relation is missing and stopping the service raises Pebble APIError.
 
-    Charm goes Blocked with "Missing airflow-coordinator relation; failed to stop service."
+    Charm goes Blocked with "Failed to stop pebble service"
     """
     state_in = dataclasses.replace(state, relations=[])
 
@@ -75,7 +75,7 @@ def test_stop_service_pebble_api_error_scenario(context, state, container):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
     assert state_out.unit_status == ops.BlockedStatus(
-        "Missing airflow-coordinator relation; failed to stop service."
+        "Failed to stop pebble service."
     )
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
@@ -98,7 +98,7 @@ def test_waiting_when_cannot_write_airflow_config(context, state, container, api
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
     assert state_out.unit_status == ops.WaitingStatus(
-        "Waiting for relation data from coordinator."
+        "Waiting for relation data from coordinator"
     )
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
