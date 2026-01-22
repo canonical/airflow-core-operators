@@ -2,7 +2,7 @@
 # See LICENSE file for licensing details.
 type: charm
 name: airflow-scheduler-k8s
-title: Charm Template
+title: Airflow scheduler charm
 summary: Monitors tasks and DAGs and triggers task instances.
 description: |
   The Airflow Scheduler is part of the core Airflow components.
