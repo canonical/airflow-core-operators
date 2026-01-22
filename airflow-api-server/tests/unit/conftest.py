@@ -1,4 +1,4 @@
-# Copyright 2025 Canonical Ltd.
+# Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
 import logging
@@ -9,6 +9,8 @@ import pytest
 from charm import AirflowApiServerCharm
 
 logger = logging.getLogger(__name__)
+
+AIRFLOW_VERSION = "3.1.0"
 
 
 @pytest.fixture
@@ -28,7 +30,7 @@ def context(airflow_api_server_charm):
 
 
 def core_component_metadata(
-    component: str, airflow_version: str = "3.1.0", workload_image_hash: str = "somehash"
+    component: str, airflow_version: str = AIRFLOW_VERSION, workload_image_hash: str = "somehash"
 ) -> dict[str, str]:
     return {
         "airflow_version": airflow_version,
