@@ -32,8 +32,3 @@ requires:
   airflow-coordinator:
     interface: airflow_coordinator
     limit: 1
-
-peers:
-  airflow-api-server-peers:
-    interface: airflow-api-server-peers
-
