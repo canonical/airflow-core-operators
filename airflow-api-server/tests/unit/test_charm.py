@@ -1,5 +1,7 @@
 import dataclasses
-from unittest.mock import PropertyMock, patch
+
+# from unittest.mock import PropertyMock, patch
+import unittest.mock
 
 import ops
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
@@ -25,8 +27,11 @@ def test_missing_relation_status_scenario(context, state, container):
 def test_relation_present_but_not_ready_scenario(context, state, container, api_server_relation):
     """Test status when relation is present but library says 'not ready'."""
     state_in = dataclasses.replace(state, relations=[api_server_relation])
-    with patch.object(
-        AirflowCoordinatorRequires, "_ready", new_callable=PropertyMock, return_value=False
+    with unittest.mock.patch.object(
+        AirflowCoordinatorRequires,
+        "_ready",
+        new_callable=unittest.mock.PropertyMock,
+        return_value=False,
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
@@ -37,13 +42,16 @@ def test_cannot_write_airflow_config_scenario(context, state, container, api_ser
     state_in = dataclasses.replace(state, relations=[api_server_relation])
 
     with (
-        patch.object(
-            AirflowCoordinatorRequires, "_ready", new_callable=PropertyMock, return_value=True
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires,
+            "_ready",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
         ),
-        patch.object(
+        unittest.mock.patch.object(
             AirflowCoordinatorRequires,
             "can_write_airflow_config",
-            new_callable=PropertyMock,
+            new_callable=unittest.mock.PropertyMock,
             return_value=False,
         ),
     ):
@@ -59,16 +67,19 @@ def test_failed_airflow_config_write_scenario(context, state, container, api_ser
     container = dataclasses.replace(container)
     state_in = dataclasses.replace(state, relations=[api_server_relation])
     with (
-        patch.object(
-            AirflowCoordinatorRequires, "_ready", new_callable=PropertyMock, return_value=True
-        ),
-        patch.object(
+        unittest.mock.patch.object(
             AirflowCoordinatorRequires,
-            "can_write_airflow_config",
-            new_callable=PropertyMock,
+            "_ready",
+            new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
-        patch.object(
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
             AirflowCoordinatorRequires,
             "write_airflow_config",
             side_effect=Exception("Write failed"),
@@ -84,17 +95,24 @@ def test_failed_airflow_config_write_scenario(context, state, container, api_ser
 def test_replan_failure_scenario(context, state, container, api_server_relation):
     state_in = dataclasses.replace(state, relations=[api_server_relation])
     with (
-        patch.object(
-            AirflowCoordinatorRequires, "_ready", new_callable=PropertyMock, return_value=True
-        ),
-        patch.object(
+        unittest.mock.patch.object(
             AirflowCoordinatorRequires,
-            "can_write_airflow_config",
-            new_callable=PropertyMock,
+            "_ready",
+            new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
-        patch.object(AirflowCoordinatorRequires, "write_airflow_config", return_value=None),
-        patch("ops.model.Container.replan", side_effect=ops.pebble.ChangeError("x", "y")),
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires, "write_airflow_config", return_value=None
+        ),
+        unittest.mock.patch(
+            "ops.model.Container.replan", side_effect=ops.pebble.ChangeError("x", "y")
+        ),
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
@@ -105,17 +123,22 @@ def test_active_status_flow_scenario(context, state, container, api_server_relat
     """Test full flow to ActiveStatus using the Scenario framework."""
     state_in = dataclasses.replace(state, relations=[api_server_relation])
     with (
-        patch.object(
-            AirflowCoordinatorRequires, "_ready", new_callable=PropertyMock, return_value=True
-        ),
-        patch.object(
+        unittest.mock.patch.object(
             AirflowCoordinatorRequires,
-            "can_write_airflow_config",
-            new_callable=PropertyMock,
+            "_ready",
+            new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
-        patch.object(AirflowCoordinatorRequires, "write_airflow_config", return_value=None),
-        patch("ops.model.Container.replan", autospec=True) as replan_mock,
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires, "write_airflow_config", return_value=None
+        ),
+        unittest.mock.patch("ops.model.Container.replan", autospec=True) as replan_mock,
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 

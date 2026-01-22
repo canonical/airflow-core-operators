@@ -1,5 +1,0 @@
-summary: Run unit tests
-execute: |
-  cd $SPREAD_PATH/airflow-api-server
-  /usr/bin/uv sync
-  /usr/bin/uv tool run tox -e unit

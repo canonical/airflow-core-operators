@@ -1,10 +1,11 @@
 type: charm
 name: airflow-api-server-k8s
 title: Charm Template
-summary: A very short one-line summary of the charm.
+summary: A charm that deploys and manages the Apache Airflow API server
 description: |
-  The Airflow API Server charm deploys and configures the Airflow API Server component.
-  It provides a RESTful interface to manage and monitor Airflow workflows (DAGs) programmatically.
+  The API server acts as the central access point for Airflow metadata and services,
+  supporting the stable REST API and serving communication between Airflow components, the UI, and external clients.
+  It exposes the REST API endpoints that allow clients to programmatically interact with Airflow resources such as DAGs, runs, and task metadata.
 
 base: ubuntu@24.04
 platforms:

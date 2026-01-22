@@ -9,13 +9,9 @@ import logging
 import ops
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
 
-logger = logging.getLogger(__name__)
+import constants
 
-SERVICE_NAME = "airflow"
-CONTAINER_NAME = "airflow-api-server"
-AIRFLOW_COMPONENT = "api-server"
-AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-coordinator"
-AIRFLOW_HOME = "/opt/airflow"
+logger = logging.getLogger(__name__)
 
 
 class ExitWithStatusError(Exception):
@@ -38,16 +34,14 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
-        framework.observe(self.on[CONTAINER_NAME].pebble_ready, self._reconcile)
-        framework.observe(
-            self.on[AIRFLOW_COORDINATOR_RELATION_NAME].relation_broken, self._reconcile
-        )
-        self.container = self.unit.get_container(CONTAINER_NAME)
 
+        self.framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
+
+        self.container = self.unit.get_container(constants.CONTAINER_NAME)
         self.config_requires = AirflowCoordinatorRequires(
             charm=self,
-            relation_name=AIRFLOW_COORDINATOR_RELATION_NAME,
-            component=AIRFLOW_COMPONENT,
+            relation_name=constants.AIRFLOW_COORDINATOR_RELATION_NAME,
+            component=constants.AIRFLOW_COMPONENT,
             workload_container=self.container,
             callback=self._reconcile,
         )
@@ -60,15 +54,23 @@ class AirflowApiServerCharm(ops.CharmBase):
                 ops.MaintenanceStatus,
             )
 
+    def _stop_workload(self) -> None:
+        """Stop the workload service if it's running."""
+        try:
+            self.container.stop(constants.SERVICE_NAME)
+        except Exception:
+            logger.debug("Workload stop skipped/failed (service may not exist yet).")
+
     def _check_required_relations(self) -> None:
         """Check if all required relations are established."""
-        relation = self.model.get_relation(AIRFLOW_COORDINATOR_RELATION_NAME)
+        relation = self.model.get_relation(constants.AIRFLOW_COORDINATOR_RELATION_NAME)
         if not relation:
             raise ExitWithStatusError(
                 "Missing airflow-coordinator relation",
                 ops.BlockedStatus,
             )
         if not self.config_requires._ready:
+            self._stop_workload()
             raise ExitWithStatusError(
                 "Waiting for relation data",
                 ops.WaitingStatus,
@@ -94,7 +96,7 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Define the Pebble layer for the workload container."""
         layer: ops.pebble.LayerDict = {
             "services": {
-                SERVICE_NAME: {
+                constants.SERVICE_NAME: {
                     "override": "replace",
                     "summary": "A service that runs the api-server workload container",
                     "command": "airflow api-server",
@@ -104,8 +106,22 @@ class AirflowApiServerCharm(ops.CharmBase):
         }
         return layer
 
+    def _layer_changed(self, label: str, new_layer: ops.pebble.LayerDict) -> bool:
+        """Return True if the currently running Pebble plan differs from new_layer."""
+        plan = self.container.get_plan()
+
+        current = plan.to_dict() if hasattr(plan, "to_dict") else plan.to_yaml()
+
+        current_services = current.get("services", {}) if isinstance(current, dict) else {}
+        desired_services = new_layer.get("services", {})
+
+        return current_services != desired_services
+
     def _add_layer_and_replan(self) -> None:
         """Add the Pebble layer and replan the services."""
+        if not self._layer_changed("api-server-base", self._api_server_layer):
+            return
+
         self.container.add_layer("api-server-base", self._api_server_layer, combine=True)
         try:
             self.container.replan()
@@ -120,7 +136,7 @@ class AirflowApiServerCharm(ops.CharmBase):
         try:
             self._check_pebble_connection()
             self._check_required_relations()
-            self._write_airflow_config(config_path=f"{AIRFLOW_HOME}/airflow.cfg")
+            self._write_airflow_config(config_path=f"{constants.AIRFLOW_CONFIG_PATH}")
             self._add_layer_and_replan()
         except ExitWithStatusError as e:
             self.unit.status = e.status
