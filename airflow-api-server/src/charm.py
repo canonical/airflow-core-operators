@@ -59,10 +59,16 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _check_required_relations(self) -> None:
         """Check if all required relations are established."""
-        if not self.config_requires.ready():
+        if not self.model.get_relation(AIRFLOW_COORDINATOR_RELATION_NAME):
             raise ExitWithStatusError(
-                "Waiting for required relations to be established",
-                ops.MaintenanceStatus,
+                f"Missing required airflow-coordinator relation: {AIRFLOW_COORDINATOR_RELATION_NAME}",
+                ops.BlockedStatus,  
+            )
+        
+        if not self.config_requires.ready:
+            raise ExitWithStatusError(
+                "Waiting for relation data",
+                ops.WaitingStatus,
             )
 
     def _write_airflow_config(self, config_path) -> None:
