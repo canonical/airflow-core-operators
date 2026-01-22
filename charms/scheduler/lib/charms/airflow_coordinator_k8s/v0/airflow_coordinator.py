@@ -140,6 +140,7 @@ class AirflowCoreComponentEnum(str, enum.Enum):
 class AirflowCoreValidationErrorEnum(str, enum.Enum):
     """Enum to encapsulate the possible validation error codes."""
 
+    WAITING_FOR_DEPENDENCIES = "waiting_for_dependencies"
     MISSING_COMPONENT = "missing_component"
     INCONSISTENT_AIRFLOW_VERSION = "inconsistent_airflow_version"
     INCONSISTENT_WORKLOAD_IMAGE_HASH = "inconsistent_workload_image_hash"
@@ -149,13 +150,14 @@ METADATA_VALIDATION_ERROR_CODE_TO_MESSAGE = {
     AirflowCoreValidationErrorEnum.MISSING_COMPONENT: "Required component is missing in the cluster",  # noqa: E501
     AirflowCoreValidationErrorEnum.INCONSISTENT_AIRFLOW_VERSION: "Component has an airflow version inconsistent with the cluster",  # noqa: E501
     AirflowCoreValidationErrorEnum.INCONSISTENT_WORKLOAD_IMAGE_HASH: "Component has a workload image hash that is inconsistent with the cluster",  # noqa: E501
+    AirflowCoreValidationErrorEnum.WAITING_FOR_DEPENDENCIES: "Waiting for necessary dependencies",
 }
 
 
 class MetadataValidationError(pydantic.BaseModel):
     """Represents a failed validation for core component."""
 
-    component: AirflowCoreComponentEnum
+    component: AirflowCoreComponentEnum | typing.Literal["coordinator"] = pydantic.Field()
     code: AirflowCoreValidationErrorEnum
 
 
@@ -171,9 +173,7 @@ class AirflowCoordinatorRequirerModel(data_interfaces.BaseCommonModel):
 
 
 SensitiveDataSecretStr = typing.Annotated[
-    data_interfaces.OptionalSecretStr,
-    pydantic.Field(exclude=True, default=None),
-    "sensitive-data",
+    data_interfaces.OptionalSecretStr, pydantic.Field(exclude=True, default=None), "sensitive-data"
 ]
 
 
@@ -212,9 +212,7 @@ TAirflowCoordinatorProviderModel = typing.TypeVar(
 )
 TAirflowCoordinatorModels = typing.TypeVar(
     "TAirflowCoordinatorModels",
-    bound=typing.Union[
-        AirflowCoordinatorRequirerModel, AirflowCoordinatorProviderModel
-    ],
+    bound=typing.Union[AirflowCoordinatorRequirerModel, AirflowCoordinatorProviderModel],
 )
 
 
@@ -272,15 +270,11 @@ class AirflowCoordinatorEvent(ops.EventBase, typing.Generic[TAirflowCoordinatorM
         self.content = pickle.loads(snapshot["content"])
 
 
-class AirflowConfigAvailableEvent(
-    AirflowCoordinatorEvent[TAirflowCoordinatorProviderModel]
-):
+class AirflowConfigAvailableEvent(AirflowCoordinatorEvent[TAirflowCoordinatorProviderModel]):
     """Event emitted when the Airflow config is available."""
 
 
-class AirflowConfigUpdatedEvent(
-    AirflowCoordinatorEvent[TAirflowCoordinatorProviderModel]
-):
+class AirflowConfigUpdatedEvent(AirflowCoordinatorEvent[TAirflowCoordinatorProviderModel]):
     """Event emitted when the Airflow config is updated."""
 
 
@@ -297,14 +291,10 @@ class AirflowCoordinatorRequiresEvents(
 
     airflow_config_available = ops.EventSource(AirflowConfigAvailableEvent)
     airflow_config_updated = ops.EventSource(AirflowConfigUpdatedEvent)
-    airflow_core_metadata_validation_failed = ops.EventSource(
-        AirflowCoreMetadataValidationFailed
-    )
+    airflow_core_metadata_validation_failed = ops.EventSource(AirflowCoreMetadataValidationFailed)
 
 
-class AirflowCoreMetadataAvailableEvent(
-    AirflowCoordinatorEvent[TAirflowCoordinatorRequirerModel]
-):
+class AirflowCoreMetadataAvailableEvent(AirflowCoordinatorEvent[TAirflowCoordinatorRequirerModel]):
     """Event emitted when an Airflow core charm shares its metadata with the Coordinator."""
 
 
@@ -354,10 +344,7 @@ class AirflowCoordinatorRequirerEventHandler(
         _diff: data_interfaces.Diff,
         content: AirflowCoordinatorProviderModel,
     ):
-        if (
-            "validation-failures" in _diff.added
-            or "validation-failures" in _diff.changed
-        ):
+        if "validation-failures" in _diff.added or "validation-failures" in _diff.changed:
             getattr(self.on, "airflow_core_metadata_validation_failed").emit(
                 event.relation, app=event.app, unit=event.unit, content=content
             )
@@ -421,9 +408,7 @@ class AirflowCoordinatorRequirerEventHandler(
 
         try:
             content = self.interface.build_model(
-                self.relation.id,
-                AirflowCoordinatorProviderModel,
-                component=self.relation.app,
+                self.relation.id, AirflowCoordinatorProviderModel, component=self.relation.app
             )
         except pydantic.ValidationError as e:
             logger.warning(f"Invalid relation contents from the coordinator charm: {e}")
@@ -447,9 +432,7 @@ class AirflowCoordinatorRequirerEventHandler(
 
         try:
             content = self.interface.build_model(
-                self.relation.id,
-                AirflowCoordinatorProviderModel,
-                component=self.relation.app,
+                self.relation.id, AirflowCoordinatorProviderModel, component=self.relation.app
             )
         except pydantic.ValidationError as e:
             logger.warning(f"Invalid relation contents from the coordinator charm: {e}")
@@ -473,9 +456,7 @@ class AirflowCoordinatorRequirerEventHandler(
         """Data from the related Airflow Coordinator charm."""
         try:
             return self.interface.build_model(
-                self.relation.id,
-                AirflowCoordinatorProviderModel,
-                component=self.relation.app,
+                self.relation.id, AirflowCoordinatorProviderModel, component=self.relation.app
             )
         except pydantic.ValidationError:
             return None
@@ -569,9 +550,7 @@ class AirflowCoordinatorProviderEventHandler(
 
         try:
             content = self.interface.build_model(
-                event.relation.id,
-                AirflowCoordinatorRequirerModel,
-                component=event.relation.app,
+                event.relation.id, AirflowCoordinatorRequirerModel, component=event.relation.app
             )
         except pydantic.ValidationError as e:
             logger.warning(f"Invalid relation contents from a core charm: {e}")
@@ -605,18 +584,14 @@ class AirflowCoordinatorProviderEventHandler(
             if self.interface.repository(relation.id, self.charm.app).get_data():
                 try:
                     model = self.interface.build_model(
-                        relation.id,
-                        AirflowCoordinatorProviderModel,
-                        component=self.charm.app,
+                        relation.id, AirflowCoordinatorProviderModel, component=self.charm.app
                     )
 
                     if config_template:
                         model.config_template = config_template
 
                     if kubernetes_executor_pod_spec:
-                        model.kubernetes_executor_pod_spec = (
-                            kubernetes_executor_pod_spec
-                        )
+                        model.kubernetes_executor_pod_spec = kubernetes_executor_pod_spec
 
                     if sensitive_data:
                         model.sensitive_data = json.dumps(sensitive_data)
@@ -650,15 +625,15 @@ class AirflowCoordinatorProviderEventHandler(
             if self.interface.repository(relation.id, self.charm.app).get_data():
                 try:
                     model = self.interface.build_model(
-                        relation.id,
-                        AirflowCoordinatorProviderModel,
-                        component=self.charm.app,
+                        relation.id, AirflowCoordinatorProviderModel, component=self.charm.app
                     )
 
-                    model.validation_failures = failures_serialized
                     model.config_template = None
                     model.kubernetes_executor_pod_spec = None
-                    model.sensitive_data = None
+                    # a truthy value assigned to avoid underlying secret from being deleted
+                    model.sensitive_data = json.dumps({})
+
+                    model.validation_failures = failures_serialized
                 except pydantic.ValidationError:
                     pass
 
@@ -706,10 +681,12 @@ class AirflowCoordinatorRequires(ops.Object):
         callback: typing.Callable,
     ):
         self._charm = charm
-        self._component = component
         self._relation_name = relation_name
+        self._component = component
 
         if not charm.model.get_relation(relation_name):
+            self._charm.framework.observe(charm.on[relation_name].relation_broken, callback)
+
             return
 
         super().__init__(charm, relation_name)
@@ -771,6 +748,7 @@ class AirflowCoordinatorRequires(ops.Object):
             failure.code
             for failure in self._requirer_handler.validation_failures
             if failure.component == self._component
+            or failure.code == AirflowCoreValidationErrorEnum.WAITING_FOR_DEPENDENCIES
         ]
 
     @property
@@ -790,11 +768,14 @@ class AirflowCoordinatorRequires(ops.Object):
         coordinator has shared relevant config data in the relation to be able to
         render the Airflow config (and that there is a lack of validation errors).
         """
+        if not self._workload_container.can_connect():
+            return False
+
         return all(
-            [
-                self._workload_container.can_connect(),
+            condition for condition in [
                 self._ready,
                 self._requirer_handler.provider_content,
+                self._requirer_handler.provider_content.config_template,
                 self._requirer_handler.provider_content.sensitive_data,
             ]
         )
@@ -854,12 +835,17 @@ class AirflowCoordinatorProvides(ops.Object):
     """A provider handler encapsulating the airflow coordinator relation."""
 
     def __init__(
-        self, charm: ops.CharmBase, relation_name: str, callback: typing.Callable
+        self,
+        charm: ops.CharmBase,
+        relation_name: str,
+        callback: typing.Callable,
+        dependencies_check_callable: typing.Callable,
     ):
         super().__init__(charm, relation_name)
 
         self._charm = charm
         self._relation_name = relation_name
+        self._dependencies_check_callable = dependencies_check_callable
 
         self._provider_handler = AirflowCoordinatorProviderEventHandler(
             charm, relation_name, AirflowCoordinatorRequirerModel
@@ -931,6 +917,17 @@ class AirflowCoordinatorProvides(ops.Object):
         If no missing components, all mismatched airflow version and mismatched
         workload image hash validation errors are populated in the databag.
         """
+        if not self._dependencies_check_callable():
+            validation_error_messages = [
+                MetadataValidationError(
+                    component="coordinator",
+                    code=AirflowCoreValidationErrorEnum.WAITING_FOR_DEPENDENCIES,
+                )
+            ]
+
+            self._provider_handler.set_validation_errors(validation_error_messages)
+            return
+
         if self.missing_core_components:
             validation_error_messages = [
                 MetadataValidationError(
@@ -943,10 +940,7 @@ class AirflowCoordinatorProvides(ops.Object):
             self._provider_handler.set_validation_errors(validation_error_messages)
             return
 
-        if (
-            self.are_airflow_versions_consistent
-            and self.are_workload_image_hashes_consistent
-        ):
+        if self.are_airflow_versions_consistent and self.are_workload_image_hashes_consistent:
             return
 
         validation_error_messages = []
