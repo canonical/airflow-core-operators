@@ -4,7 +4,7 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "airflow-api-server"
-version = "0.0.1"
+version = "0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "jinja2" },
@@ -13,6 +13,9 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+format = [
+    { name = "ruff" },
+]
 integration = [
     { name = "jubilant" },
     { name = "pytest" },
@@ -37,6 +40,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+format = [{ name = "ruff" }]
 integration = [
     { name = "jubilant" },
     { name = "pytest" },

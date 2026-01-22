@@ -3,7 +3,7 @@
 
 [project]
 name = "airflow-api-server"
-version = "0.0.1"
+version = "0.0"
 requires-python = ">=3.10"
 
 # Dependencies of the charm code
@@ -19,6 +19,9 @@ lint = [
     "ruff",
     "codespell",
     "pyright",
+]
+format = [
+    "ruff",
 ]
 
 # Dependencies of unit tests
@@ -67,6 +70,9 @@ lint.ignore = [
 ]
 extend-exclude = ["__pycache__", "*.egg_info"]
 lint.per-file-ignores = {"tests/*" = ["D100","D101","D102","D103","D104"]}
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

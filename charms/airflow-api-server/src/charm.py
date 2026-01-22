@@ -26,6 +26,7 @@ class ExitWithStatusError(Exception):
 
     @property
     def status(self):
+        """Return the Juju unit status represented by this exception."""
         return self.status_type(self.msg)
 
 
@@ -67,7 +68,10 @@ class AirflowApiServerCharm(ops.CharmBase):
                 "Missing airflow-coordinator relation",
                 ops.BlockedStatus,
             )
-        if self.config_requires.missing_core_components_exist and not self._stored.has_ever_been_ready:
+        if (
+            self.config_requires.missing_core_components_exist
+            and not self._stored.has_ever_been_ready
+        ):
             raise ExitWithStatusError(
                 "Waiting for relation data from coordinator",
                 ops.WaitingStatus,
@@ -75,7 +79,6 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _write_airflow_config(self, config_path: str) -> None:
         """Write configuration files to the workload."""
-
         if not self.config_requires.can_write_airflow_config:
             if not self._stored.has_ever_been_ready:
                 self._add_layer_and_replan(startup="disabled")
@@ -114,7 +117,6 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _add_layer_and_replan(self, startup: str = "enabled") -> None:
         """Add the Pebble layer and replan the services."""
-        
         service = self.container.get_services().get(constants.SERVICE_NAME)
         if service and service.startup == startup:
             return
@@ -131,7 +133,6 @@ class AirflowApiServerCharm(ops.CharmBase):
                 ops.BlockedStatus,
             )
 
-
     def _reconcile(self, event) -> None:
         """Reconcile the charm state."""
         try:
@@ -139,7 +140,7 @@ class AirflowApiServerCharm(ops.CharmBase):
             self._check_required_relations()
             self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
             self._add_layer_and_replan()
-            self._stored.has_ever_been_ready = True # Happy path
+            self._stored.has_ever_been_ready = True  # Happy path
 
         except ExitWithStatusError as e:
             self.unit.status = e.status
