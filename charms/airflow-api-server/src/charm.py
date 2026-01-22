@@ -99,12 +99,12 @@ class AirflowApiServerCharm(ops.CharmBase):
             )
 
     def _api_server_layer(self, startup: str = "enabled") -> ops.pebble.LayerDict:
-        """Define the Pebble layer for the workload container."""
+        """Define the Pebble layer for the workload."""
         layer: ops.pebble.LayerDict = {
             "services": {
                 constants.SERVICE_NAME: {
                     "override": "replace",
-                    "summary": "A service that runs the api-server workload container",
+                    "summary": "A service that runs the api-server workload.",
                     "command": "airflow api-server",
                     "startup": startup,
                 }
