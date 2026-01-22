@@ -193,7 +193,7 @@ class AirflowCoordinatorProviderModel(data_interfaces.BaseCommonModel):
     def validate_validation_failures(
         cls, validation_failures: str | list[dict[str, typing.Any]] | None
     ) -> str:
-        """Validator for validation_failures, ensure conversion to string."""
+        """Validate validation_failures, ensure conversion to string."""
         # data_interfaces.RepositoryInterface.build_model uses json.loads on all
         # fields, meaning the field can be a list of dicts instead of string
         if isinstance(validation_failures, list):
@@ -318,7 +318,7 @@ class AirflowCoordinatorRequirerEventHandler(
         request_model: type[TAirflowCoordinatorProviderModel],
         unique_key: str = "",
     ):
-        """Builds an Airflow Coordinator requirer event handler."""
+        """Build an Airflow Coordinator requirer event handler."""
         super().__init__(charm, relation_name, unique_key)
         self.charm = charm
         self.component = self.charm.app

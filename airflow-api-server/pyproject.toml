@@ -22,12 +22,14 @@ lint = [
     "codespell",
     "pyright",
 ]
+
 # Dependencies of unit tests
 unit = [
     "coverage[toml]",
     "ops[testing]",
     "pytest",
 ]
+
 # Dependencies of integration tests
 integration = [
     "jubilant",

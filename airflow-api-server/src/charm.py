@@ -5,10 +5,9 @@
 """Charm the application."""
 
 import logging
+
 import ops
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
-
-
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +60,10 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Check if all required relations are established."""
         if not self.model.get_relation(AIRFLOW_COORDINATOR_RELATION_NAME):
             raise ExitWithStatusError(
-                f"Missing required airflow-coordinator relation: {AIRFLOW_COORDINATOR_RELATION_NAME}",
-                ops.BlockedStatus,  
+                f"Missing airflow-coordinator relation: {AIRFLOW_COORDINATOR_RELATION_NAME}",
+                ops.BlockedStatus,
             )
-        
+
         if not self.config_requires.ready:
             raise ExitWithStatusError(
                 "Waiting for relation data",
@@ -73,7 +72,10 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _write_airflow_config(self, config_path) -> None:
         """Write configuration files to the workload container."""
-        if not self.config_requires.write_airflow_config(config_path=config_path):
+        try:
+            self.config_requires.write_airflow_config(config_path=config_path)
+        except Exception as e:
+            logger.error("failed to write airflow config: %s", e)
             raise ExitWithStatusError(
                 "Failed to write to config file to workload container",
                 ops.BlockedStatus,

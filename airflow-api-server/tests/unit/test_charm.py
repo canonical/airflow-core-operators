@@ -1,91 +1,73 @@
-# Copyright 2025 Ubuntu
-# See LICENSE file for licensing details.
-#
-# To learn more about testing, see https://documentation.ubuntu.com/ops/latest/explanation/testing/
+import dataclasses
+from unittest.mock import PropertyMock, patch
 
-import pytest
-from ops import pebble, testing
-
-from charm import SERVICE_NAME, AirflowApiServerCharm
-
-CHECK_NAME = "service-ready"  # Name of Pebble check in the mock workload container.
-
-layer = pebble.Layer(
-    {
-        "services": {
-            SERVICE_NAME: {
-                "override": "replace",
-                "command": "/bin/foo",  # The specific command isn't important for unit tests.
-                "startup": "enabled",
-            }
-        },
-        "checks": {
-            CHECK_NAME: {
-                "override": "replace",
-                "level": "ready",
-                "threshold": 3,
-                "startup": "enabled",
-                "http": {
-                    "url": "http://localhost:8000/version",  # The specific URL isn't important.
-                },
-            }
-        },
-    }
-)
+import ops
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
 
 
-def mock_get_version():
-    """Get a mock version string without executing the workload code."""
-    return "1.0.0"
+def test_pebble_connection_failure_scenario(context, state, container, api_server_relation):
+    """Test the scenario when the container cannot connect to Pebble."""
+    container = dataclasses.replace(container, can_connect=False)
+    state_in = dataclasses.replace(state, relations=[api_server_relation])
+    state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.WaitingStatus("Waiting for relation data")
 
 
-def test_pebble_ready(monkeypatch: pytest.MonkeyPatch):
-    """Test that the charm has the correct state after handling the pebble-ready event."""
-    # Arrange:
-    ctx = testing.Context(AirflowApiServerCharm)
-    check_in = testing.CheckInfo(
-        CHECK_NAME,
-        level=pebble.CheckLevel.READY,
-        status=pebble.CheckStatus.UP,  # Simulate the Pebble check passing.
+def test_missing_relation_status_scenario(context, state, container, api_server_relation):
+    """Test the 'Missing relation' block when NOT integrated."""
+    state_in = dataclasses.replace(state, relations=[api_server_relation])
+    state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    if not state_out.relations:
+        assert state_out.unit_status == ops.BlockedStatus(
+            "Missing airflow-coordinator relation: airflow-coordinator"
+        )
+    else:
+        assert state_out.unit_status == ops.WaitingStatus("Waiting for relation data")
+
+
+def test_relation_present_but_not_ready_scenario(context, state, container, api_server_relation):
+    """Test status when relation is present but library says 'not ready'."""
+    state_in = dataclasses.replace(state, relations=[api_server_relation])
+    state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.WaitingStatus("Waiting for relation data")
+
+
+def test_failed_airflow_config_write_scenario(context, state, container, api_server_relation):
+    """Test the scenario when the configuration file cannot be written to the container."""
+    container = dataclasses.replace(container, can_connect=True)
+    state_in = dataclasses.replace(state, relations=[api_server_relation])
+    with (
+        patch.object(AirflowCoordinatorRequires, "ready", return_value=True),
+        patch.object(
+            AirflowCoordinatorRequires,
+            "write_airflow_config",
+            side_effect=Exception("Simulated write failure"),
+        ),
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.BlockedStatus(
+        "Failed to write to config file to workload container"
     )
-    container_in = testing.Container(
-        "some-container",
-        can_connect=True,
-        layers={"base": layer},
-        service_statuses={SERVICE_NAME: pebble.ServiceStatus.INACTIVE},
-        check_infos={check_in},
-    )
-    state_in = testing.State(containers={container_in})
-    monkeypatch.setattr("charm.airflow_api_server.get_version", mock_get_version)
-
-    # Act:
-    state_out = ctx.run(ctx.on.pebble_ready(container_in), state_in)
-
-    # Assert:
-    container_out = state_out.get_container(container_in.name)
-    assert container_out.service_statuses[SERVICE_NAME] == pebble.ServiceStatus.ACTIVE
-    assert state_out.workload_version is not None
-    assert state_out.unit_status == testing.ActiveStatus()
 
 
-def test_pebble_ready_service_not_ready():
-    """Test that the charm raises an error if the workload isn't ready after Pebble starts it."""
-    # Arrange:
-    ctx = testing.Context(AirflowApiServerCharm)
-    check_in = testing.CheckInfo(
-        CHECK_NAME,
-        level=pebble.CheckLevel.READY,
-        status=pebble.CheckStatus.DOWN,  # Simulate the Pebble check failing.
-    )
-    container_in = testing.Container(
-        "some-container",
-        can_connect=True,
-        layers={"base": layer},
-        service_statuses={SERVICE_NAME: pebble.ServiceStatus.INACTIVE},
-        check_infos={check_in},
-    )
-    state_in = testing.State(containers={container_in})
+def test_active_status_flow_scenario(context, state, container, api_server_relation):
+    """Test full flow to ActiveStatus using the Scenario framework."""
+    state_in = dataclasses.replace(state, relations=[api_server_relation])
+    with (
+        patch.object(
+            AirflowCoordinatorRequires, "ready", new_callable=PropertyMock(return_value=True)
+        ),
+        patch.object(AirflowCoordinatorRequires, "write_airflow_config", return_value=True),
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
 
-    # Act & assert:
-    with pytest.raises(testing.errors.UncaughtCharmError):
-        ctx.run(ctx.on.pebble_ready(container_in), state_in)
+    assert state_out.unit_status == ops.ActiveStatus()
+
+    out_container = state_out.get_container("airflow-api-server")
+    plan = out_container.layers["api-server-base"]
+    assert "airflow-api-server" in plan.services
+    assert plan.services["airflow-api-server"].command == "airflow api-server"

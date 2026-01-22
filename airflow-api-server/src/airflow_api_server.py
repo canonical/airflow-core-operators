@@ -10,5 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def get_version() -> str | None:
+    """Get the running version of the workload."""
     return None
