@@ -628,10 +628,12 @@ class AirflowCoordinatorProviderEventHandler(
                         relation.id, AirflowCoordinatorProviderModel, component=self.charm.app
                     )
 
-                    model.validation_failures = failures_serialized
                     model.config_template = None
                     model.kubernetes_executor_pod_spec = None
-                    model.sensitive_data = None
+                    # a truthy value assigned to avoid underlying secret from being deleted
+                    model.sensitive_data = "null"
+
+                    model.validation_failures = failures_serialized
                 except pydantic.ValidationError:
                     pass
 
@@ -771,6 +773,7 @@ class AirflowCoordinatorRequires(ops.Object):
                 self._workload_container.can_connect(),
                 self._ready,
                 self._requirer_handler.provider_content,
+                self._requirer_handler.provider_content.config_template,
                 self._requirer_handler.provider_content.sensitive_data,
             ]
         )

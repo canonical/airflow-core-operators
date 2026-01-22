@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2023 Ubuntu
+# Copyright 2026 Ubuntu
 # See LICENSE file for licensing details.
 
 """Charm the Airflow API Server."""
@@ -20,22 +20,24 @@ class ExitWithStatusError(Exception):
     """Exception raised to exit with a specific status."""
 
     def __init__(self, msg: str, status_type):
-        """Initialize the exception with a status."""
         super().__init__(str(msg))
         self.msg = str(msg)
         self.status_type = status_type
 
     @property
     def status(self):
-        """Get the status."""
         return self.status_type(self.msg)
 
 
 class AirflowApiServerCharm(ops.CharmBase):
     """Charm the Airflow API Server."""
 
+    _stored = ops.StoredState()
+
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
+
+        self._stored.set_default(has_ever_been_ready=False)
 
         self.framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
 
@@ -56,34 +58,32 @@ class AirflowApiServerCharm(ops.CharmBase):
                 ops.MaintenanceStatus,
             )
 
-    def _stop_workload(self) -> None:
-        """Stop the workload service if it's running."""
-        services = self.container.get_services()
-
-        service = services.get(constants.SERVICE_NAME)
-        if service and service.is_running():
-            self.container.stop(constants.SERVICE_NAME)
-
     def _check_required_relations(self) -> None:
-        """Check if all required relations are established."""
-        relation = self.model.get_relation(constants.AIRFLOW_COORDINATOR_RELATION_NAME)
-        if not relation:
-            self._stop_workload()
+        """Check if required relations are established."""
+        if not self.model.get_relation(constants.AIRFLOW_COORDINATOR_RELATION_NAME):
+            self._stored.has_ever_been_ready = False
             self._add_layer_and_replan(startup="disabled")
             raise ExitWithStatusError(
                 "Missing airflow-coordinator relation",
                 ops.BlockedStatus,
             )
-
-    def _write_airflow_config(self, config_path) -> None:
-        """Write configuration files to the workload."""
-        if not self.config_requires.can_write_airflow_config:
-            self._stop_workload()
-            self._add_layer_and_replan(startup="disabled")
+        if self.config_requires.missing_core_components_exist and not self._stored.has_ever_been_ready:
             raise ExitWithStatusError(
-                "Cannot write airflow config to workload container: Waiting for relation data",
+                "Waiting for relation data from coordinator",
                 ops.WaitingStatus,
             )
+
+    def _write_airflow_config(self, config_path: str) -> None:
+        """Write configuration files to the workload."""
+
+        if not self.config_requires.can_write_airflow_config:
+            if not self._stored.has_ever_been_ready:
+                self._add_layer_and_replan(startup="disabled")
+                raise ExitWithStatusError(
+                    "Cannot write config file to workload container.",
+                    ops.WaitingStatus,
+                )
+            return
         try:
             self.config_requires.write_airflow_config(config_path=config_path)
         except (
@@ -92,8 +92,9 @@ class AirflowApiServerCharm(ops.CharmBase):
             json.JSONDecodeError,
             jinja2.TemplateError,
         ):
+            self._add_layer_and_replan(startup="disabled")
             raise ExitWithStatusError(
-                "Failed to write to config file to workload container",
+                "Failed to write config file to workload container",
                 ops.BlockedStatus,
             )
 
@@ -113,32 +114,37 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _add_layer_and_replan(self, startup: str = "enabled") -> None:
         """Add the Pebble layer and replan the services."""
-        current_services = self.container.get_plan().to_dict().get("services", {})
-        layer = self._api_server_layer(startup=startup)
-        desired_services = layer.get("services", {})
-
-        if current_services == desired_services:
+        
+        service = self.container.get_services().get(constants.SERVICE_NAME)
+        if service and service.startup == startup:
             return
 
+        layer = self._api_server_layer(startup=startup)
         self.container.add_layer("api-server-base", layer, combine=True)
+
         try:
             self.container.replan()
-        except ops.pebble.ChangeError:
+        except ops.pebble.ChangeError as e:
+            logger.exception("Failed to replan Pebble services: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
             )
 
-    def _reconcile(self, _) -> None:
+
+    def _reconcile(self, event) -> None:
         """Reconcile the charm state."""
         try:
             self._check_pebble_connection()
             self._check_required_relations()
             self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
-            self._add_layer_and_replan(startup="enabled")
+            self._add_layer_and_replan()
+            self._stored.has_ever_been_ready = True # Happy path
+
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return
+
         self.unit.status = ops.ActiveStatus()
 
 
