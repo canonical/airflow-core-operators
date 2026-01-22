@@ -70,7 +70,7 @@ jobs:
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   publish:
-    name: Publish changed charms
+    name: Publish ${{ matrix.charm_path }} | ${{ matrix.platform }}
     needs: [get-modified-charms, run-tests, collect-build-matrix]
     if: ${{ needs.get-modified-charms.outputs.paths != '[]' }}
     runs-on: ${{ matrix.runner }}
