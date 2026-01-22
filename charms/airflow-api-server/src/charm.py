@@ -33,14 +33,14 @@ class ExitWithStatusError(Exception):
 class AirflowApiServerCharm(ops.CharmBase):
     """Charm the Airflow API Server."""
 
-    _stored = ops.StoredState()
-
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
 
-        self._stored.set_default(has_ever_been_ready=False)
-
         self.framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
+        # self.framework.observe(
+        #     self.on[constants.PEER_RELATION_NAME].relation_joined, self._reconcile
+
+        # )
 
         self.container = self.unit.get_container(constants.CONTAINER_NAME)
         self.config_requires = AirflowCoordinatorRequires(
@@ -50,6 +50,23 @@ class AirflowApiServerCharm(ops.CharmBase):
             workload_container=self.container,
             callback=self._reconcile,
         )
+
+    def _has_ever_been_ready(self, default: bool = False) -> bool:
+        """Read a boolean from the unit peer databag."""
+        rel = self.model.get_relation(constants.PEER_RELATION_NAME)
+        if not rel:
+            return default
+        raw = rel.data[self.unit].get(constants.HAS_EVER_BEEN_READY_KEY)
+        if raw is None:
+            return default
+        return raw.lower() == "true"
+
+    def _set_has_ever_been_ready(self, value: bool) -> None:
+        """Write a boolean to the unit peer databag."""
+        rel = self.model.get_relation(constants.PEER_RELATION_NAME)
+        if not rel:
+            return
+        rel.data[self.unit][constants.HAS_EVER_BEEN_READY_KEY] = "true" if value else "false"
 
     def _check_pebble_connection(self) -> None:
         """Check if the Pebble API is reachable in the workload container."""
@@ -62,16 +79,13 @@ class AirflowApiServerCharm(ops.CharmBase):
     def _check_required_relations(self) -> None:
         """Check if required relations are established."""
         if not self.model.get_relation(constants.AIRFLOW_COORDINATOR_RELATION_NAME):
-            self._stored.has_ever_been_ready = False
             self._add_layer_and_replan(startup="disabled")
             raise ExitWithStatusError(
                 "Missing airflow-coordinator relation",
                 ops.BlockedStatus,
             )
-        if (
-            self.config_requires.missing_core_components_exist
-            and not self._stored.has_ever_been_ready
-        ):
+
+        if self.config_requires.missing_core_components_exist and not self._has_ever_been_ready():
             raise ExitWithStatusError(
                 "Waiting for relation data from coordinator",
                 ops.WaitingStatus,
@@ -80,13 +94,14 @@ class AirflowApiServerCharm(ops.CharmBase):
     def _write_airflow_config(self, config_path: str) -> None:
         """Write configuration files to the workload."""
         if not self.config_requires.can_write_airflow_config:
-            if not self._stored.has_ever_been_ready:
+            if not self._has_ever_been_ready():
                 self._add_layer_and_replan(startup="disabled")
                 raise ExitWithStatusError(
                     "Cannot write config file to workload container.",
                     ops.WaitingStatus,
                 )
             return
+
         try:
             self.config_requires.write_airflow_config(config_path=config_path)
         except (
@@ -140,7 +155,7 @@ class AirflowApiServerCharm(ops.CharmBase):
             self._check_required_relations()
             self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
             self._add_layer_and_replan()
-            self._stored.has_ever_been_ready = True  # Happy path
+            self._set_has_ever_been_ready(True)
 
         except ExitWithStatusError as e:
             self.unit.status = e.status
