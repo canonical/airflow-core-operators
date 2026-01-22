@@ -11,8 +11,9 @@ from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordin
 
 logger = logging.getLogger(__name__)
 
-SERVICE_NAME = CONTAINER_NAME = "airflow-api-server"  # Name of the workload container.
-AIRFLOW_COMPONENT = "api-server"
+SERVICE_NAME = "airflow"
+CONTAINER_NAME = "airflow-api-server"  # Name of the workload container.
+AIRFLOW_COMPONENT = "dag-processor"
 AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-coordinator"
 AIRFLOW_HOME = "/opt/airflow"
 
@@ -60,7 +61,7 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Check if all required relations are established."""
         if not self.model.get_relation(AIRFLOW_COORDINATOR_RELATION_NAME):
             raise ExitWithStatusError(
-                f"Missing airflow-coordinator relation: {AIRFLOW_COORDINATOR_RELATION_NAME}",
+                f"Missing airflow-coordinator relation",
                 ops.BlockedStatus,
             )
 
@@ -72,6 +73,13 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _write_airflow_config(self, config_path) -> None:
         """Write configuration files to the workload container."""
+
+        if not self.config_requires.can_write_airflow_config:
+            raise ExitWithStatusError(
+                "Cannot write airflow config: missing relation data",
+                ops.WaitingStatus,
+            )
+            return
         try:
             self.config_requires.write_airflow_config(config_path=config_path)
         except Exception as e:
@@ -80,7 +88,7 @@ class AirflowApiServerCharm(ops.CharmBase):
                 "Failed to write to config file to workload container",
                 ops.BlockedStatus,
             )
-
+        
     @property
     def _api_server_layer(self) -> ops.pebble.LayerDict:
         """Define the Pebble layer for the workload container."""
@@ -89,10 +97,8 @@ class AirflowApiServerCharm(ops.CharmBase):
                 SERVICE_NAME: {
                     "override": "replace",
                     "summary": "A service that runs in the api-server workload container",
-                    "command": "airflow api-server",
+                    "command": "airflow dag-processor",
                     "startup": "enabled",
-                    "user": "airflow",
-                    "group": "airflow",
                 }
             }
         }
@@ -115,7 +121,7 @@ class AirflowApiServerCharm(ops.CharmBase):
         try:
             self._check_pebble_connection()
             self._check_required_relations()
-            self._write_airflow_config(config_path="$AIRFLOW_HOME/airflow.cfg")
+            self._write_airflow_config(config_path=f"{AIRFLOW_HOME}/airflow.cfg")
             self._add_layer_and_replan()
         except ExitWithStatusError as e:
             self.unit.status = e.status
@@ -123,5 +129,5 @@ class AirflowApiServerCharm(ops.CharmBase):
         self.unit.status = ops.ActiveStatus()
 
 
-if __name__ == "__main__":  # pragma: nocover
+if __name__ == "__main__": 
     ops.main(AirflowApiServerCharm)
