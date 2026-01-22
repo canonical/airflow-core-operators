@@ -87,7 +87,7 @@ class AirflowApiServerCharm(ops.CharmBase):
                 SERVICE_NAME: {
                     "override": "replace",
                     "summary": "A service that runs in the api-server workload container",
-                    "command": "pip install pydantic && airflow api-server",
+                    "command": "airflow api-server",
                     "startup": "enabled",
                     "user": "airflow",
                     "group": "airflow",
