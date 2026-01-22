@@ -19,7 +19,7 @@ def test_pebble_connection_failure_scenario(context, state, container, api_serve
 
 def test_missing_relation_status_scenario(context, state, container):
     state_in = dataclasses.replace(state, relations=[])
-    
+
     with (
         unittest.mock.patch("ops.model.Container.stop",autospec=True),
         unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=False),
@@ -32,11 +32,17 @@ def test_missing_relation_status_scenario(context, state, container):
     assert "api-server-base" not in out_container.layers
 
 def test_missing_relation_with_cleanup_config_exists_scenario(context, state, container):
-    """Missing relation; stop succeeds; config exists -> stop + remove config; blocked on missing relation."""
+    """Missing relation; stop succeeds; config exists.
+
+    Expect: service is stopped, config is removed, and unit is Blocked due to the
+    missing airflow-coordinator relation.
+    """
     state_in = dataclasses.replace(state, relations=[])
 
     with (
-        unittest.mock.patch("ops.model.Container.stop", autospec=True, return_value=None) as stop_mock,
+        unittest.mock.patch(
+            "ops.model.Container.stop", autospec=True, return_value=None
+        ) as stop_mock,
         unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=True),
         unittest.mock.patch("ops.model.Container.remove_path", autospec=True) as remove_mock,
     ):
@@ -51,7 +57,6 @@ def test_missing_relation_with_cleanup_config_exists_scenario(context, state, co
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     assert "api-server-base" not in out_container.layers
-
 
 def test_stop_service_pebble_api_error_scenario(context, state, container):
     """When relation is missing and stopping the service raises Pebble APIError.
@@ -75,7 +80,7 @@ def test_stop_service_pebble_api_error_scenario(context, state, container):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
     assert state_out.unit_status == ops.BlockedStatus(
-        "Failed to stop pebble service."
+        "Failed to stop pebble service"
     )
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
@@ -157,7 +162,7 @@ def test_failed_airflow_config_write_generic_exception_scenario(
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
     assert state_out.unit_status == ops.BlockedStatus(
-        "Failed to write config file to workload container."
+        "Failed to write config file to workload container"
     )
 
 

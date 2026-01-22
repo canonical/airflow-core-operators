@@ -62,7 +62,7 @@ def test_missing_relation_with_cleanup_scenario(context, state, container):
     remove_mock.assert_called_once()
     call_args = remove_mock.call_args
     # Check that recursive=False was passed
-    assert call_args.kwargs.get("recursive") == False
+    assert call_args.kwargs.get("recursive") is False
 
     assert state_out.unit_status == ops.BlockedStatus(
         "Missing airflow-coordinator relation"
