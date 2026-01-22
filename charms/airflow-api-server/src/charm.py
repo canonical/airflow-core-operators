@@ -36,30 +36,31 @@ class AirflowApiServerCharm(ops.CharmBase):
 
         self.framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
 
-        self.container = self.unit.get_container(constants.CONTAINER_NAME)
-        self.config_requires = AirflowCoordinatorRequires(
+        self._container = self.unit.get_container(constants.CONTAINER_NAME)
+        self._config_requires = AirflowCoordinatorRequires(
             charm=self,
             relation_name=constants.AIRFLOW_COORDINATOR_RELATION_NAME,
             component=constants.AIRFLOW_COMPONENT,
-            workload_container=self.container,
+            workload_container=self._container,
             callback=self._reconcile,
         )
 
     def _stop_service_and_remove_config(self) -> None:
         try:
-            svc = self.container.get_services().get(constants.SERVICE_NAME)
-            if svc and svc.is_running():
-                self.container.stop(constants.SERVICE_NAME)
-        except ops.pebble.ConnectionError:
-            return
-        try:
-            self.container.remove_path(constants.AIRFLOW_CONFIG_PATH, recursive=False)
-        except (ops.pebble.PathError, ops.pebble.ConnectionError, ops.pebble.APIError):
-            pass
+            logger.info("Stopping service %s", constants.SERVICE_NAME)
+            self._container.stop(constants.SERVICE_NAME)
+        except ops.pebble.APIError:
+            raise ExitWithStatusError(
+                "Missing airflow-coordinator relation; failed to stop service.",
+                ops.BlockedStatus,
+            )
+        config_path = constants.AIRFLOW_CONFIG_PATH
+        if self._container.exists(config_path):
+            self._container.remove_path(config_path, recursive=False)
 
     def _check_pebble_connection(self) -> None:
         """Verify connection to the container; otherwise raise."""
-        if not self.container.can_connect():
+        if not self._container.can_connect():
             raise ExitWithStatusError(
                 "Cannot connect to workload container", ops.MaintenanceStatus
             )
@@ -75,13 +76,13 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _write_airflow_config(self, config_path: str) -> None:
         """Write configuration files to the workload."""
-        if not self.config_requires.can_write_airflow_config:
+        if not self._config_requires.can_write_airflow_config:
             raise ExitWithStatusError(
                 "Waiting for relation data from coordinator.",
                 ops.WaitingStatus,
             )
         try:
-            self.config_requires.write_airflow_config(config_path=config_path)
+            self._config_requires.write_airflow_config(config_path=config_path)
         except (
             ops.pebble.ConnectionError,
             ops.pebble.Error,
@@ -96,6 +97,7 @@ class AirflowApiServerCharm(ops.CharmBase):
                 ops.BlockedStatus,
             )
 
+    @property
     def _api_server_layer(self) -> ops.pebble.LayerDict:
         """Define the Pebble layer for the workload."""
         layer: ops.pebble.LayerDict = {
@@ -104,24 +106,29 @@ class AirflowApiServerCharm(ops.CharmBase):
                     "override": "replace",
                     "summary": "A service that runs the api-server workload.",
                     "command": "airflow api-server",
-                    "startup": "disabled",
+                    "startup": "enabled",
                 }
             }
         }
         return layer
 
     def _add_layer_and_replan(self) -> None:
-        """Add the Pebble layer and replan the services."""
-        self.container.add_layer("api-server-base", self._api_server_layer(), combine=True)
+        """Add the Pebble layer and replan the services.
+
+        The service starts automatically after replanning as startup is enabled.
+
+        Raises:
+            ExitWithStatusError: If replanning fails.
+        """
+        self._container.add_layer("api-server-base", self._api_server_layer, combine=True)
         try:
-            self.container.replan()
+            self._container.replan()
 
         except ops.pebble.ChangeError:
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
             )
-        self.container.start(constants.SERVICE_NAME)
 
     def _reconcile(self, _) -> None:
         """Reconcile the charm state."""
@@ -129,7 +136,6 @@ class AirflowApiServerCharm(ops.CharmBase):
             self._check_pebble_connection()
             self._check_required_relations()
             self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
-
             self._add_layer_and_replan()
         except ExitWithStatusError as e:
             self.unit.status = e.status
