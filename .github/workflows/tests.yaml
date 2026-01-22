@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        directory: ${{ fromJSON(inputs.directories) }}
+        directory: ${{ fromJSON(inputs.directories || '["charms/api-server","charms/scheduler","charms/dag-processor","charms/triggerer"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        directory: ${{ fromJSON(inputs.directories) }}
+        directory: ${{ fromJSON(inputs.directories || '["charms/api-server","charms/scheduler","charms/dag-processor","charms/triggerer"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
