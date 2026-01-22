@@ -17,6 +17,7 @@ AIRFLOW_COMPONENT = "api-server"
 AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-coordinator"
 AIRFLOW_HOME = "/opt/airflow"
 
+
 class ExitWithStatusError(Exception):
     """Exception raised to exit with a specific status."""
 
@@ -38,7 +39,16 @@ class AirflowApiServerCharm(ops.CharmBase):
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
         framework.observe(self.on[CONTAINER_NAME].pebble_ready, self._reconcile)
-        framework.observe(self.on[AIRFLOW_COORDINATOR_RELATION_NAME].relation_broken, self._reconcile)
+        for event in (
+            "relation_broken",
+            "relation_changed",
+            "relation_created",
+            "relation_joined",
+        ):
+            framework.observe(
+                getattr(self.on[AIRFLOW_COORDINATOR_RELATION_NAME], event),
+                self._reconcile,
+            )
         self.container = self.unit.get_container(CONTAINER_NAME)
 
         self.config_requires = AirflowCoordinatorRequires(
@@ -59,10 +69,10 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _check_required_relations(self) -> None:
         """Check if all required relations are established."""
-        relation = self.model.get_relation(AIRFLOW_COORDINATOR_RELATION_NAME) # Added this line to get the relation object
+        relation = self.model.get_relation(AIRFLOW_COORDINATOR_RELATION_NAME)
         if not relation:
             raise ExitWithStatusError(
-                f"Missing airflow-coordinator relation",
+                "Missing airflow-coordinator relation",
                 ops.BlockedStatus,
             )
         if not self.config_requires._ready:
@@ -75,17 +85,17 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Write configuration files to the workload container."""
         if not self.config_requires.can_write_airflow_config:
             raise ExitWithStatusError(
-                "Cannot write airflow config: missing Sensitive Data",
+                "Cannot write airflow config to workload container",
                 ops.BlockedStatus,
             )
         try:
             self.config_requires.write_airflow_config(config_path=config_path)
-        except Exception as e:
+        except Exception:
             raise ExitWithStatusError(
                 "Failed to write to config file to workload container",
                 ops.BlockedStatus,
             )
-        
+
     @property
     def _api_server_layer(self) -> ops.pebble.LayerDict:
         """Define the Pebble layer for the workload container."""
@@ -93,7 +103,7 @@ class AirflowApiServerCharm(ops.CharmBase):
             "services": {
                 SERVICE_NAME: {
                     "override": "replace",
-                    "summary": "A service that runs in the api-server workload container",
+                    "summary": "A service that runs the api-server workload container",
                     "command": "airflow api-server",
                     "startup": "enabled",
                 }
@@ -106,9 +116,9 @@ class AirflowApiServerCharm(ops.CharmBase):
         self.container.add_layer("api-server-base", self._api_server_layer, combine=True)
         try:
             self.container.replan()
-        except ops.pebble.ChangeError as e:
+        except ops.pebble.ChangeError:
             raise ExitWithStatusError(
-                "failed to replan Pebble services",
+                "Failed to replan Pebble services",
                 ops.BlockedStatus,
             )
 
@@ -125,5 +135,5 @@ class AirflowApiServerCharm(ops.CharmBase):
         self.unit.status = ops.ActiveStatus()
 
 
-if __name__ == "__main__": 
+if __name__ == "__main__":
     ops.main(AirflowApiServerCharm)
