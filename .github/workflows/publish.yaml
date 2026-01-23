@@ -59,7 +59,7 @@ jobs:
                   ;;
               esac
 
-              matrix=$(jq \
+              matrix=$(jq -c \
                 --arg charm_path "$charm_path" \
                 --arg platform "$platform" \
                 --arg runner "$runner" \

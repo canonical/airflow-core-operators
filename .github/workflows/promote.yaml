@@ -46,7 +46,7 @@ jobs:
           else
             CHARM_DIRS="charms/${{ inputs.charm-name }}"
           fi
-          MATRIX=$(printf '%s\n' $CHARM_DIRS | jq -R . | jq -s '{include: map({charm_path: .})}')
+          MATRIX=$(printf '%s\n' $CHARM_DIRS | jq -R . | jq -s -c '{include: map({charm_path: .})}')
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   promote:
