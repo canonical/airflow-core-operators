@@ -1,11 +1,7 @@
 # airflow-dag processor
 
-Charmhub package name: airflow-dag processor
-More information: https://charmhub.io/airflow-dag processor
-
-This charm deploys and manages the Apache Airflow API Server as part of a Charmed Airflow deployment.
-It is designed to work only in coordination with the Airflow Coordinator charm, which centralizes
-configuration, secrets, and cluster-wide validation.
+This charm deploys and manages the Apache Airflow Dag Processor as part of a Charmed Airflow deployment.
+The DAG processor continuously scans the DAGs folder, parses Python files to discover DAG definitions.
 
 ## Overview
 
