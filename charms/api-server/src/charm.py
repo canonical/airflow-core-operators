@@ -27,7 +27,6 @@ class ExitWithStatusError(Exception):
         """Return the Juju unit status represented by this exception."""
         return self.status_type(self.msg)
 
-
 class AirflowApiServerCharm(ops.CharmBase):
     """Charm the Airflow API Server."""
 
@@ -59,7 +58,7 @@ class AirflowApiServerCharm(ops.CharmBase):
             self._container.remove_path(config_path, recursive=False)
 
     def _check_pebble_connection(self) -> None:
-        """Verify connection to the container; otherwise raise"""
+        """Verify connection to the container; otherwise raise."""
         if not self._container.can_connect():
             raise ExitWithStatusError(
                 "Cannot connect to workload container", ops.MaintenanceStatus

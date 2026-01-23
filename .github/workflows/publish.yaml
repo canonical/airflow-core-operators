@@ -1,0 +1,98 @@
+name: Publish charms
+
+on:
+  push:
+    branches:
+      - "track/*"
+
+jobs:
+  get-modified-charms:
+    name: Detect changed charms
+    uses: canonical/workflows-team/.github/workflows/get_modified_directories_by_marker.yaml@main
+    with:
+      base-ref: ${{ github.event.before }}
+      marker: charmcraft.yaml
+      search-root: charms
+    secrets: inherit
+
+  run-tests:
+    name: Unit + integration tests
+    needs: get-modified-charms
+    if: ${{ needs.get-modified-charms.outputs.paths != '[]' }}
+    uses: ./.github/workflows/tests.yaml
+    with:
+      directories: ${{ needs.get-modified-charms.outputs.paths }}
+    secrets: inherit
+
+  collect-build-matrix:
+    name: Collect charm build platforms
+    needs: get-modified-charms
+    if: ${{ needs.get-modified-charms.outputs.paths != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.out.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build publish matrix
+        id: out
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          paths='${{ needs.get-modified-charms.outputs.paths }}'
+          matrix='{"include":[]}'
+
+          for charm_path in $(echo "$paths" | jq -r '.[]'); do
+            cfg="$charm_path/charmcraft.yaml"
+            platforms=$(yq -o=json '.platforms | keys // ["amd64"]' "$cfg")
+
+            for platform in $(jq -r '.[]' <<< "$platforms"); do
+              case "$platform" in
+                amd64) runner="ubuntu-latest" ;;
+                arm64) runner="ubuntu-24.04-arm" ;;
+                *)
+                  echo "Unsupported platform '$platform' in $cfg" >&2
+                  exit 1
+                  ;;
+              esac
+
+              matrix=$(jq \
+                --arg charm_path "$charm_path" \
+                --arg platform "$platform" \
+                --arg runner "$runner" \
+                '.include += [{"charm_path":$charm_path,"platform":$platform,"runner":$runner}]' \
+                <<< "$matrix")
+            done
+          done
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish ${{ matrix.charm_path }} | ${{ matrix.platform }}
+    needs: [get-modified-charms, run-tests, collect-build-matrix]
+    if: ${{ needs.get-modified-charms.outputs.paths != '[]' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.collect-build-matrix.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Compute tag prefix
+        id: meta
+        shell: bash
+        run: |
+          echo "tag_prefix=$(basename '${{ matrix.charm_path }}')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload charm to Charmhub
+        uses: canonical/charming-actions/upload-charm@2.6.2
+        with:
+          credentials: ${{ secrets.CHARMCRAFT_CREDENTIALS }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          charm-path: ${{ matrix.charm_path }}
+          channel: 3.1/edge
+          tag-prefix: ${{ steps.meta.outputs.tag_prefix }}
+          charmcraft-channel: 3.x/stable
