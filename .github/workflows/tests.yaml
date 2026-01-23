@@ -24,13 +24,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "${secrets.CHARMHUB_TOKEN}" ]; then
-            echo "CHARMHUB_TOKEN secret is NOT set" >&2
+          if [ -z "${{ secrets.CHARMHUB_TOKEN }}" ]; then
+            echo "charmhub_token secret is NOT set" >&2
             exit 1
           fi
-
-          printf '%s' "${secrets.CHARMHUB_TOKEN}" | jq -e . >/dev/null
-          echo "CHARMHUB_TOKEN is present and valid JSON"
+          echo '${{ secrets.CHARMHUB_TOKEN }}'
+          printf '%s' '${{ secrets.CHARMHUB_TOKEN }}' | jq -e . >/dev/null
+          echo "charmhub_token is present and valid JSON"
 
   lint:
     runs-on: ubuntu-latest
