@@ -1,11 +1,7 @@
 # airflow-triggerer
 
-Charmhub package name: airflow-triggerer-k8s
-More information: https://charmhub.io/airflow-triggerer
-
 This charm deploys and manages the Apache Airflow Triggerer as part of a Charmed Airflow deployment.
-It is designed to work only in coordination with the Airflow Coordinator charm, which centralizes
-configuration, secrets, and cluster-wide validation.
+The Triggerer runs an asynchronous event loop that executes trigger code and fires events back to the scheduler when conditions are met. This enables deferrable operators to free up worker resources while waiting.
 
 ## Overview
 

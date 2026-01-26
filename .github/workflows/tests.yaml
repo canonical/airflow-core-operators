@@ -69,7 +69,7 @@ jobs:
             echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          MATRIX=$(printf '%s\n' $FILES | jq -R . | jq -s '{include: map({test_file: .})}')
+          MATRIX=$(printf '%s\n' $FILES | jq -R . | jq -s -c '{include: map({test_file: .})}')
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   integration-tests:
