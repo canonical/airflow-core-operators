@@ -1,0 +1,27 @@
+[project]
+name = "airflow-core-operators"
+version = "0.0.0"
+requires-python = ">=3.10"
+description = "Integration tests tooling for airflow-core-operators"
+readme = "README.md"
+dependencies = []
+
+[dependency-groups]
+integration = [
+  "pytest",
+  "pytest-operator",
+  "juju",
+  "jubilant",
+  "requests",
+  "PyYAML",
+  "tenacity",
+]
+
+dev = [
+  "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+addopts = "-vv -s"
+testpaths = ["tests/integration"]
+asyncio_mode = "auto"
