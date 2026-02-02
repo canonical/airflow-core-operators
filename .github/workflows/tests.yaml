@@ -14,6 +14,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
+  lib-check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        charm-path: ${{ fromJSON(inputs.directories || '["charms/api-server","charms/scheduler","charms/dag-processor","charms/triggerer"]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Check Libraries
+        id: checklibs
+        uses: canonical/charming-actions/check-libraries@1.0.0
+        with:
+          credentials: "${{ secrets.CHARMHUB_TOKEN }}"
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          charm-path: ${{ matrix.charm-path }}
+
   lint:
     runs-on: ubuntu-latest
     strategy:
@@ -34,6 +53,7 @@ jobs:
         run: uv tool run tox -e lint
 
   unit-tests:
+    needs: lib-check
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -73,7 +93,7 @@ jobs:
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   integration-tests:
-    needs: [lint, unit-tests, discover-integration-tasks]
+    needs: [lib-check, lint, unit-tests, discover-integration-tasks]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
