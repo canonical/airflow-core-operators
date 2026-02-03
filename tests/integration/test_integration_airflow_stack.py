@@ -10,6 +10,9 @@ from tests.integration.helpers.charm_prep import (
     POSTGRES_APP,
 )
 
+# list of core app names used by several tests
+core_apps = [app for _, app in CORE_CHARMS]
+
 COORD_REL = os.environ.get("COORD_REL", "airflow-coordinator")
 AIRFLOW_CONFIG_PATH = os.environ.get("AIRFLOW_CONFIG_PATH", "/opt/airflow/airflow.cfg")
 

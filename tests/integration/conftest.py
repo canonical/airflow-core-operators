@@ -8,14 +8,12 @@ import pytest
 import jubilant
 import re
 
-from dataclasses import dataclass
 from tests.integration.helpers.charm_prep import (
     CORE_CHARMS,
     COORDINATOR_APP,
     POSTGRES_APP,
     POSTGRES_CHANNEL,
     COORDINATOR_CHANNEL,
-    COORD_REL,
     coordinator_charm_ref,
     image_resources,
     pack_all_core_charms,
@@ -39,6 +37,13 @@ def workload_container_for_app(app: str) -> str:
 
 def ssh(juju: jubilant.Juju, unit: str, container: str, cmd: str) -> str:
     return juju.cli("ssh", "--container", container, unit, cmd)
+
+
+def ssh_unit(juju: jubilant.Juju, unit: str, cmd: str) -> str:
+    """Run `juju ssh <unit> <cmd>` (no --container). Use when the workload
+    binary (e.g. curl) is available on the unit's default shell but not in a
+    specific container."""
+    return juju.cli("ssh", unit, cmd)
 
 def push_text_file(
     juju: jubilant.Juju,
@@ -236,6 +241,11 @@ def container_for():
 @pytest.fixture
 def run_in():
     return ssh
+
+
+@pytest.fixture
+def run_in_unit():
+    return ssh_unit
 
 @pytest.fixture
 def push_file():

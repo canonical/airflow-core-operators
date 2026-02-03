@@ -9,8 +9,6 @@ dependencies = []
 [dependency-groups]
 integration = [
   "pytest",
-  "pytest-operator",
-  "juju",
   "jubilant",
   "requests",
   "PyYAML",
@@ -22,6 +20,8 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-vv -s"
+addopts = "-p no:pytest_operator -vv -s"
 testpaths = ["tests/integration"]
-asyncio_mode = "auto"
+markers = [
+    "abort_on_fail: abort test run on first failure",
+]
