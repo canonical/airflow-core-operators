@@ -24,9 +24,6 @@ def test_dag_discovery_and_execution(
     airflow_db_migrated,
 ):
     """Injected DAG should be discovered and complete successfully."""
-    airflow_db_migrated(juju, get_core_app("scheduler"))
-    print("Airflow DB migration ensured.")
-
     dag_id = "test_functional_dag"
     dag_content = functional_test_dag(dag_id)
 

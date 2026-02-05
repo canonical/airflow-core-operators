@@ -73,21 +73,6 @@ def push_text_file(
     ssh(juju, unit, container, cmd)
 
 
-def ensure_airflow_db_migrated(
-    juju: jubilant.Juju,
-    app: str,
-) -> None:
-    """
-    Make sure Airflow metadata DB has tables.
-    We run this from a core unit (scheduler is usually best).
-    """
-    unit = unit_name(app)
-    container = workload_container_for_app(app)
-
-    cmd = "bash -lc " + shlex.quote("airflow db migrate || airflow db upgrade || true")
-    ssh(juju, unit, container, cmd)
-    juju.wait(jubilant.all_agents_idle, timeout=30 * 60)
-
 
 def file_exists(juju: jubilant.Juju, unit: str, container: str, path: str) -> bool:
     """Return True if a file exists in the workload container."""
@@ -276,9 +261,3 @@ def run_in_unit():
 def push_file():
     """Fixture returning file push helper."""
     return push_text_file
-
-
-@pytest.fixture
-def airflow_db_migrated():
-    """Fixture returning Airflow DB migration helper."""
-    return ensure_airflow_db_migrated
