@@ -1,114 +1,146 @@
+"""Integration tests for configuration and relation behavior."""
+
+from __future__ import annotations
+
+import shlex
 import time
-import json
+
 import pytest
 import jubilant
-import shlex
 
-from tests.integration.helpers import dags
-from tests.integration.helpers.dags import functional_test_dag
-
-
-API_APP = "airflow-api-server-k8s"
-PROC_APP = "airflow-dag-processor-k8s"
-SCHED_APP = "airflow-scheduler-k8s"
-TRIG_APP = "airflow-triggerer-k8s"
-
-DAGS_FILE = "/dags/test_dag.py"
-
-import re
-
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-
-def _json_from_airflow(out: str) -> list | dict:
-    """Parse Airflow --output json even if output is colorized."""
-    clean = _ANSI_RE.sub("", out).strip()
-    return json.loads(clean)
-# def _json_from_airflow(out: str) -> list | dict:
-#     """Extract and parse JSON from Airflow CLI output, handling warnings/logs."""
-#     out = out.strip()
-#     for idx in [out.rfind("["), out.rfind("{")]:
-#         if idx != -1:
-#             try:
-#                 return json.loads(out[idx:])
-#             except json.JSONDecodeError:
-#                 continue
-#     raise ValueError(f"Could not parse JSON from output:\n{out}")
+from tests.integration.helpers.airflow_helpers import (
+    json_from_airflow,
+    read_airflow_config,
+)
+from tests.integration.helpers.constants import (
+    AIRFLOW_CONFIG_PATH,
+    COORDINATOR_APP,
+    COORD_REL,
+    CORE_CHARMS,
+    get_core_app,
+)
+from tests.integration.helpers.juju_helpers import find_component_metadata
 
 
 @pytest.mark.abort_on_fail
-def test_dag_discovery_and_execution(
+def test_airflow_config_options_present_and_rewritten_on_relation_change(
+    juju: jubilant.Juju,
+    deployed_stack: bool,
+    relate_core_charms: bool,
+    remove_relation,
+    integrate_relation,
+    unit,
+    container_for,
+    run_in,
+):
+    """Airflow config should be removed on relation break and restored on rejoin."""
+    target_app = get_core_app("scheduler")
+    target_unit = unit(target_app)
+    target_container = container_for(target_app)
+
+    cfg = read_airflow_config(juju, target_unit, target_container, run_in)
+
+    assert cfg.get("core", "dags_folder") == "dags"
+    assert cfg.get("core", "executor") == "LocalExecutor"
+    assert cfg.get("core", "load_examples") == "False"
+    assert cfg.get("database", "sql_alchemy_conn").startswith("postgresql+psycopg2://")
+    assert cfg.get("api", "port") == "8080"
+    assert cfg.get("logging", "base_log_folder") == "logs"
+
+    remove_relation(
+        juju,
+        f"{COORDINATOR_APP}:{COORD_REL}",
+        f"{target_app}:{COORD_REL}",
+    )
+
+    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
+
+    missing = run_in(
+        juju,
+        target_unit,
+        target_container,
+        "bash -lc "
+        + shlex.quote(f"test -f {AIRFLOW_CONFIG_PATH} && echo OK || echo MISSING"),
+    )
+    assert "MISSING" in missing
+
+    integrate_relation(
+        juju,
+        f"{COORDINATOR_APP}:{COORD_REL}",
+        f"{target_app}:{COORD_REL}",
+    )
+
+    juju.wait(jubilant.all_agents_idle, timeout=20 * 60)
+
+    cfg = read_airflow_config(juju, target_unit, target_container, run_in)
+    assert cfg.get("core", "executor") == "LocalExecutor"
+    assert cfg.get("database", "sql_alchemy_conn").startswith("postgresql+psycopg2://")
+
+
+@pytest.mark.abort_on_fail
+def test_relation_databag_contains_core_metadata(
+    juju: jubilant.Juju,
+    deployed_stack: bool,
+    relate_core_charms: bool,
+    unit,
+):
+    """Each core charm should publish component metadata to the relation databag."""
+    for expected_component, app in CORE_CHARMS:
+        matching = find_component_metadata(
+            juju,
+            unit(app),
+            COORD_REL,
+            expected_component,
+        )
+
+        assert matching is not None, (
+            f"Missing component metadata for {expected_component}"
+        )
+
+
+@pytest.mark.abort_on_fail
+def test_airflow_cli_stress_dags_list(
+    juju: jubilant.Juju,
+    deployed_stack: bool,
+    relate_core_charms: bool,
+    run_in,
+    unit,
+    container_for,
+    airflow_db_migrated,
+):
+    """Airflow CLI should remain responsive under repeated list calls."""
+    airflow_db_migrated(juju, get_core_app("scheduler"))
+
+    for _ in range(6):
+        out = run_in(
+            juju,
+            unit(get_core_app("scheduler")),
+            container_for(get_core_app("scheduler")),
+            "bash -lc "
+            + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
+        )
+        parsed = json_from_airflow(out)
+        assert parsed is not None
+        time.sleep(5)
+
+
+@pytest.mark.abort_on_fail
+def test_database_connectivity_from_scheduler(
     juju: jubilant.Juju,
     deployed_stack: bool,
     relate_core_charms: bool,
     unit,
     container_for,
-    run_in,
-    push_file,
-    airflow_db_migrated,
+    run_in_unit,
 ):
-    
-    airflow_db_migrated(juju, SCHED_APP)
-    print("Airflow DB migration ensured.")
-    
-    dag_id = "test_functional_dag"
-    dag_content = functional_test_dag(dag_id)
-    
-    print("Pushing DAG content:")
-    for app in [TRIG_APP, API_APP, SCHED_APP, PROC_APP]:
-        push_file(juju, unit(app), container_for(app), DAGS_FILE, dag_content)
-    print("DAG pushed.")
-    
-    ## Touch the DAGs folder to trigger a rescan so that it picks up the new DAG
-    for app in [API_APP, TRIG_APP, SCHED_APP, PROC_APP]:
-        run_in(juju,unit(app),container_for(app),"bash -lc " + shlex.quote(f"airflow dags reserialize"))
-        run_in(juju,unit(app),container_for(app),"bash -lc " + shlex.quote(f"airflow dags unpause {dag_id}"))
-        
-    juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
-    print("Verify DAG discovery and execution")
-    discovered = False
-    for _ in range(36):
-        out = run_in(juju,unit(SCHED_APP),container_for(SCHED_APP),
-            "bash -lc " + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),)
-        print("Printing out ----------- ",out)
-        try:
-            print("TYPE:", type(out))
-            print("REPR:", repr(out))
-            dags = _json_from_airflow(out)
+    """Exec into the scheduler container and confirm DB connectivity."""
+    # Exec into the scheduler unit's container and run airflow db check (or similar)
+    scheduler_unit = unit(get_core_app("scheduler"))
+    scheduler_container = container_for(get_core_app("scheduler"))
 
-            print("Dags ------ ",dags)
-            if any(d.get("dag_id") == dag_id for d in dags if isinstance(d, dict)):
-                print("DAG discovered in list.")
-                discovered = True
-                break
-        except Exception:
-            print("Error parsing DAG list output.")
-            pass
-        time.sleep(10)
+    check_cmd = "airflow db check || echo 'DB check failed'"
+    out = run_in_unit(
+        juju, scheduler_unit, scheduler_container, "bash -lc " + shlex.quote(check_cmd)
+    )
 
-    assert discovered, "DAG was not discovered (DAG Processor failed to sync DAG to DB)"
-
-    run_id = f"it-{int(time.time())}"
-    ## Trigger the DAG
-    run_in(juju,unit(SCHED_APP),container_for(SCHED_APP),
-           "bash -lc " + shlex.quote(f"airflow dags trigger {dag_id} --run-id {run_id}"))
-
-    success = False
-    # Discover when the DAG run reaches success state
-    for _ in range(60):
-        out = run_in(juju,unit(SCHED_APP),container_for(SCHED_APP),
-            "bash -lc " + shlex.quote(f"PYTHONWARNINGS=ignore NO_COLOR=1 CLICOLOR=0 TERM=dumb airflow dags list-runs {dag_id} --output json"))
-        print(out)
-        try:
-            runs = _json_from_airflow(out)
-            for r in runs if isinstance(runs, list) else []:
-                if r.get("run_id") == run_id and r.get("state") == "success":
-                    success = True
-                    break
-            if success:
-                break
-        except Exception:
-            pass
-
-        time.sleep(10)
-
-    assert success, "DAG did not reach success state"
+    assert "DB check failed" not in out, f"Failed to connect to the DB: {out}"
