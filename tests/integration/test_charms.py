@@ -91,11 +91,8 @@ def test_triggerer_health(
     unit,
     container_for,
     run_in,
-    airflow_db_migrated,
 ):
     """Triggerer job should report a healthy status."""
-    airflow_db_migrated(juju, get_core_app("scheduler"))
-
     out = run_in(
         juju,
         unit(get_core_app("triggerer")),

@@ -102,11 +102,8 @@ def test_airflow_cli_stress_dags_list(
     run_in,
     unit,
     container_for,
-    airflow_db_migrated,
 ):
     """Airflow CLI should remain responsive under repeated list calls."""
-    airflow_db_migrated(juju, get_core_app("scheduler"))
-
     for _ in range(6):
         out = run_in(
             juju,

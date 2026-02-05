@@ -21,7 +21,6 @@ def test_dag_discovery_and_execution(
     container_for,
     run_in,
     push_file,
-    airflow_db_migrated,
 ):
     """Injected DAG should be discovered and complete successfully."""
     dag_id = "test_functional_dag"
