@@ -23,11 +23,6 @@ def test_full_stack_goes_active_and_core_services_run(
     juju: jubilant.Juju,
     deployed_stack: bool,
     relate_core_charms: bool,
-    file_exists_fn,
-    pebble_services,
-    pebble_running,
-    unit,
-    container_for,
 ):
     """Full stack should go active and core services should be running."""
     juju.wait(
@@ -50,8 +45,6 @@ def test_full_stack_goes_active_and_core_services_run(
 @pytest.mark.abort_on_fail
 def test_pebble_services_and_config_exist(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
     file_exists_fn,
     pebble_services,
     pebble_running,
@@ -77,10 +70,7 @@ def test_pebble_services_and_config_exist(
 @pytest.mark.abort_on_fail
 def test_api_health_endpoint_if_available(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
     unit,
-    container_for,
     run_in_unit,
 ):
     """API server health endpoint should return healthy when available."""
@@ -98,8 +88,6 @@ def test_api_health_endpoint_if_available(
 @pytest.mark.abort_on_fail
 def test_triggerer_health(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
     unit,
     container_for,
     run_in,
@@ -127,8 +115,6 @@ def test_triggerer_health(
 @pytest.mark.abort_on_fail
 def test_airflow_config_cli_values(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
     run_in,
     unit,
     container_for,
@@ -185,38 +171,8 @@ def test_airflow_config_cli_values(
 
 
 @pytest.mark.abort_on_fail
-def test_core_charms_wait_when_postgres_scaled_down(
-    juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
-):
-    """Core charms should go waiting if Postgres is scaled down or removed."""
-    try:
-        juju.cli("scale-application", POSTGRES_APP, "0")
-    except Exception:
-        juju.cli("remove-application", POSTGRES_APP, "--no-prompt", "--force")
-
-    juju.wait(
-        ready=lambda: all(
-            juju.status().apps[app].app_status.current == "waiting"
-            for _, app in CORE_CHARMS
-        ),
-        timeout=20 * 60,
-    )
-
-    st = juju.status()
-    for _, app in CORE_CHARMS:
-        app_status = st.apps[app]
-        assert app_status.is_waiting, (
-            f"Expected {app} waiting, got {app_status.app_status.current}"
-        )
-
-
-@pytest.mark.abort_on_fail
 def test_charm_statuses_on_missing_relation(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
     remove_relation,
 ):
     """Scheduler and coordinator should block if their relation is removed."""
@@ -246,3 +202,28 @@ def test_charm_statuses_on_missing_relation(
             assert app_status.is_waiting, (
                 f"Expected {app} waiting, got {app_status.app_status.current}"
             )
+
+@pytest.mark.abort_on_fail
+def test_core_charms_wait_when_postgres_scaled_down(
+    juju: jubilant.Juju,
+    integrate_relation,
+):
+    """Core charms should go waiting if Postgres is scaled down or removed."""
+    for _, app in CORE_CHARMS:
+        integrate_relation(
+            juju, f"{COORDINATOR_APP}:{COORD_REL}", f"{app}:{COORD_REL}"
+        )
+
+    juju.cli("remove-application", POSTGRES_APP, "--no-prompt", "--force")
+
+    juju.wait(
+        ready=lambda st: all(st.apps[app].is_waiting for _, app in CORE_CHARMS),
+        timeout=15 * 60,
+    )
+    
+    st = juju.status()
+    for _, app in CORE_CHARMS:
+        app_status = st.apps[app]
+        assert app_status.is_waiting, (
+            f"Expected {app} waiting, got {app_status.app_status.current}"
+        )

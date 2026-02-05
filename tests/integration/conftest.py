@@ -181,12 +181,9 @@ def deployed_stack(juju: jubilant.Juju):
         error=jubilant.any_error,
         timeout=30 * 60,
     )
-    juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
 
-    print("Postgres deployed and active.")
     print("Deploying coordinator...")
     juju.deploy(coord_ref, app=COORDINATOR_APP, channel=COORDINATOR_CHANNEL, trust=True)
-    juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
 
     for _, app in CORE_CHARMS:
         charm_path = str(core_charm_files[app])
@@ -196,8 +193,6 @@ def deployed_stack(juju: jubilant.Juju):
 
     print("Integrating coordinator <-> postgres")
     juju.integrate(f"{COORDINATOR_APP}:postgres", f"{POSTGRES_APP}:database")
-    juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
-
     return True
 
 
@@ -220,9 +215,6 @@ def relate_core_charms(juju: jubilant.Juju, deployed_stack: bool):
         error=jubilant.any_error,
         timeout=15 * 60,
     )
-
-    juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
-
     return True
 
 

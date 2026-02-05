@@ -80,8 +80,6 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
 @pytest.mark.abort_on_fail
 def test_relation_databag_contains_core_metadata(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
     unit,
 ):
     """Each core charm should publish component metadata to the relation databag."""
@@ -101,8 +99,6 @@ def test_relation_databag_contains_core_metadata(
 @pytest.mark.abort_on_fail
 def test_airflow_cli_stress_dags_list(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
     run_in,
     unit,
     container_for,
@@ -123,24 +119,19 @@ def test_airflow_cli_stress_dags_list(
         assert parsed is not None
         time.sleep(5)
 
-
 @pytest.mark.abort_on_fail
 def test_database_connectivity_from_scheduler(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
     unit,
     container_for,
-    run_in_unit,
+    run_in,
 ):
     """Exec into the scheduler container and confirm DB connectivity."""
-    # Exec into the scheduler unit's container and run airflow db check (or similar)
     scheduler_unit = unit(get_core_app("scheduler"))
     scheduler_container = container_for(get_core_app("scheduler"))
 
     check_cmd = "airflow db check || echo 'DB check failed'"
-    out = run_in_unit(
+    out = run_in(
         juju, scheduler_unit, scheduler_container, "bash -lc " + shlex.quote(check_cmd)
     )
-
     assert "DB check failed" not in out, f"Failed to connect to the DB: {out}"
