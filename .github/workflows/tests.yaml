@@ -105,4 +105,4 @@ jobs:
           sudo snap install just --classic
       
       - name: Run integration test file
-        run: just test ${{ matrix.test_file }}
+        run: just integration ${{ matrix.test_file }}
