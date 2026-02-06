@@ -102,6 +102,7 @@ jobs:
           sudo k8s kubectl config view --raw > ~/.kube/config
 
           uv tool install tox
+          sudo snap install just --classic
       
       - name: Run integration test file
-        run: uv tool run tox -e integration -- ${{ matrix.test_file }}
+        run: just test ${{ matrix.test_file }}

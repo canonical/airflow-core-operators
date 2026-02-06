@@ -6,63 +6,65 @@ import pytest
 import jubilant
 import shlex
 
+from tests.integration.conftest import (
+    file_exists,
+    pebble_services_text,
+    pebble_service_is_running,
+    ssh,
+    ssh_unit,
+    unit_name,
+    workload_container_for_app,
+    remove_relation_if_exists,
+    integrate_if_missing,
+)
 from tests.integration.helpers.airflow_helpers import get_airflow_config_value
 from tests.integration.helpers.constants import (
     AIRFLOW_CONFIG_PATH,
+    ALL_APPS,
     COORDINATOR_APP,
     COORD_REL,
-    CORE_APPS,
     CORE_CHARMS,
     PEBBLE_SERVICE_NAME,
     POSTGRES_APP,
     get_core_app,
 )
 
+
 @pytest.mark.abort_on_fail
 def test_full_stack_goes_active_and_core_services_run(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
+    deployed_stack,
 ):
     """Full stack should go active and core services should be running."""
-    juju.wait(
-        ready=lambda st: jubilant.all_active(
-            st, POSTGRES_APP, COORDINATOR_APP, *CORE_APPS
-        ),
-        error=jubilant.any_error,
-        timeout=60 * 60,
-    )
+    # The deployed_stack fixture already waits for all apps to be active
+    # Just verify the status
+    juju.wait(lambda st: jubilant.all_active(st, *ALL_APPS), timeout=5 * 60)
 
-    all_apps = [POSTGRES_APP, COORDINATOR_APP] + [app for _, app in CORE_CHARMS]
-    for app in all_apps:
-        app_status = juju.status().apps[app]
+    status = juju.status()
+    for app in ALL_APPS:
+        app_status = status.apps[app]
         assert app_status.is_active, (
             f"{app} should be active, but got status {app_status.app_status.current}"
         )
 
 
-
 @pytest.mark.abort_on_fail
 def test_pebble_services_and_config_exist(
     juju: jubilant.Juju,
-    file_exists_fn,
-    pebble_services,
-    pebble_running,
-    unit,
-    container_for,
+    deployed_stack,
 ):
     """Pebble services should be active and config should be present."""
     service_name = PEBBLE_SERVICE_NAME
     for _, app in CORE_CHARMS:
-        u = unit(app)
-        c = container_for(app)
+        u = unit_name(app)
+        c = workload_container_for_app(app)
 
-        assert file_exists_fn(juju, u, c, AIRFLOW_CONFIG_PATH), (
+        assert file_exists(juju, u, c, AIRFLOW_CONFIG_PATH), (
             f"{app}: expected {AIRFLOW_CONFIG_PATH} to exist"
         )
 
-        services_text = pebble_services(juju, u, c)
-        assert pebble_running(services_text, service_name), (
+        services_text = pebble_services_text(juju, u, c)
+        assert pebble_service_is_running(services_text, service_name), (
             f"{app}: pebble service '{service_name}' not active.\n{services_text}"
         )
 
@@ -70,14 +72,13 @@ def test_pebble_services_and_config_exist(
 @pytest.mark.abort_on_fail
 def test_api_health_endpoint_if_available(
     juju: jubilant.Juju,
-    unit,
-    run_in_unit,
+    deployed_stack,
 ):
     """API server health endpoint should return healthy when available."""
-    api_unit = unit(get_core_app("api-server"))
+    api_unit = unit_name(get_core_app("api-server"))
 
     check_cmd = "command -v curl >/dev/null && curl -s http://localhost:8080/api/v2/monitor/health || echo NO_CURL"
-    out = run_in_unit(juju, api_unit, "bash -lc " + shlex.quote(check_cmd))
+    out = ssh_unit(juju, api_unit, "bash -lc " + shlex.quote(check_cmd))
 
     compact = out.replace(" ", "").replace("\n", "")
     assert '"status":"healthy"' in compact, (
@@ -88,15 +89,15 @@ def test_api_health_endpoint_if_available(
 @pytest.mark.abort_on_fail
 def test_triggerer_health(
     juju: jubilant.Juju,
-    unit,
-    container_for,
-    run_in,
+    deployed_stack,
 ):
     """Triggerer job should report a healthy status."""
-    out = run_in(
+    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
+
+    out = ssh(
         juju,
-        unit(get_core_app("triggerer")),
-        container_for(get_core_app("triggerer")),
+        unit_name(get_core_app("triggerer")),
+        workload_container_for_app(get_core_app("triggerer")),
         "bash -lc 'airflow jobs check --job-type TriggererJob || true'",
     )
 
@@ -112,9 +113,7 @@ def test_triggerer_health(
 @pytest.mark.abort_on_fail
 def test_airflow_config_cli_values(
     juju: jubilant.Juju,
-    run_in,
-    unit,
-    container_for,
+    deployed_stack,
 ):
     """Airflow CLI should return expected config values."""
     assert (
@@ -123,9 +122,6 @@ def test_airflow_config_cli_values(
             get_core_app("scheduler"),
             "core",
             "executor",
-            run_in,
-            unit,
-            container_for,
         )
         == "LocalExecutor"
     )
@@ -135,9 +131,6 @@ def test_airflow_config_cli_values(
             get_core_app("api-server"),
             "api",
             "port",
-            run_in,
-            unit,
-            container_for,
         )
         == "8080"
     )
@@ -147,9 +140,6 @@ def test_airflow_config_cli_values(
             get_core_app("triggerer"),
             "logging",
             "base_log_folder",
-            run_in,
-            unit,
-            container_for,
         )
         == "logs"
     )
@@ -159,9 +149,6 @@ def test_airflow_config_cli_values(
             get_core_app("dag-processor"),
             "core",
             "dags_folder",
-            run_in,
-            unit,
-            container_for,
         )
         == "dags"
     )
@@ -170,16 +157,16 @@ def test_airflow_config_cli_values(
 @pytest.mark.abort_on_fail
 def test_charm_statuses_on_missing_relation(
     juju: jubilant.Juju,
-    remove_relation,
+    deployed_stack,
 ):
     """Scheduler and coordinator should block if their relation is removed."""
-    remove_relation(
+    remove_relation_if_exists(
         juju,
         f"{COORDINATOR_APP}:{COORD_REL}",
         f"{get_core_app('scheduler')}:{COORD_REL}",
     )
 
-    juju.wait(jubilant.all_agents_idle)
+    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
     st = juju.status()
     coord_app = st.apps[COORDINATOR_APP]
@@ -200,24 +187,27 @@ def test_charm_statuses_on_missing_relation(
                 f"Expected {app} waiting, got {app_status.app_status.current}"
             )
 
+
 @pytest.mark.abort_on_fail
 def test_core_charms_wait_when_postgres_scaled_down(
     juju: jubilant.Juju,
-    integrate_relation,
+    deployed_stack,
 ):
     """Core charms should go waiting if Postgres is scaled down or removed."""
-    for _, app in CORE_CHARMS:
-        integrate_relation(
-            juju, f"{COORDINATOR_APP}:{COORD_REL}", f"{app}:{COORD_REL}"
-        )
-
+    integrate_if_missing(
+        juju,
+        f"{COORDINATOR_APP}:{COORD_REL}",
+        f"{get_core_app('scheduler')}:{COORD_REL}",
+    )
     juju.cli("remove-application", POSTGRES_APP, "--no-prompt", "--force")
+
+    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
     juju.wait(
         ready=lambda st: all(st.apps[app].is_waiting for _, app in CORE_CHARMS),
         timeout=15 * 60,
     )
-    
+
     st = juju.status()
     for _, app in CORE_CHARMS:
         app_status = st.apps[app]

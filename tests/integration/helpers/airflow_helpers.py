@@ -27,11 +27,12 @@ def read_airflow_config(
     juju: jubilant.Juju,
     unit: str,
     container: str,
-    run_in,
     path: str = AIRFLOW_CONFIG_PATH,
 ) -> configparser.ConfigParser:
     """Read the rendered airflow.cfg from the workload container."""
-    output = run_in(juju, unit, container, "bash -lc " + shlex.quote(f"cat {path}"))
+    from tests.integration.conftest import ssh
+
+    output = ssh(juju, unit, container, "bash -lc " + shlex.quote(f"cat {path}"))
     parser = configparser.ConfigParser()
     parser.read_string(output)
     return parser
@@ -42,16 +43,15 @@ def get_airflow_config_value(
     app: str,
     section: str,
     key: str,
-    run_in,
-    unit,
-    container_for,
 ) -> str:
     """Return a config value from the Airflow CLI."""
+    from tests.integration.conftest import ssh, unit_name, workload_container_for_app
+
     cmd = f"airflow config get-value {section} {key}"
-    out = run_in(
+    out = ssh(
         juju,
-        unit(app),
-        container_for(app),
+        unit_name(app),
+        workload_container_for_app(app),
         "bash -lc " + shlex.quote(cmd),
     )
     return clean_ansi(out).strip()

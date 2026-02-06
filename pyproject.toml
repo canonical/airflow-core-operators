@@ -15,12 +15,23 @@ integration = [
   "tenacity",
 ]
 
-dev = [
+unit = [
+  "pytest",
+  "coverage[toml]",
+]
+
+lint = [
+  "ruff>=0.6",
+  "codespell",
+]
+
+format = [
   "ruff>=0.6",
 ]
 
 [tool.pytest.ini_options]
-addopts = "-p no:pytest_operator -vv -s"
+minversion = "6.0"
+addopts = "--tb=native --verbose --capture=no --log-cli-level=INFO"
 testpaths = ["tests/integration"]
 markers = [
     "abort_on_fail: abort test run on first failure",

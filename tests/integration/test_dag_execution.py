@@ -5,54 +5,84 @@ import pytest
 import jubilant
 import shlex
 
+from tests.integration.conftest import (
+    push_text_file,
+)
 from tests.integration.helpers.airflow_helpers import (
     functional_test_dag,
     json_from_airflow,
 )
-from tests.integration.helpers.constants import CORE_APPS, DAGS_FILE, get_core_app
+from tests.integration.helpers.constants import (
+    CONTAINER_NAMES,
+    CORE_APPS,
+    DAGS_FILE,
+    get_core_app,
+)
 
 
 @pytest.mark.abort_on_fail
 def test_dag_discovery_and_execution(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
-    unit,
-    container_for,
-    run_in,
-    push_file,
+    deployed_stack,
 ):
     """Injected DAG should be discovered and complete successfully."""
+    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
+
     dag_id = "test_functional_dag"
     dag_content = functional_test_dag(dag_id)
 
     print("Pushing DAG content:")
     for app in CORE_APPS:
-        push_file(juju, unit(app), container_for(app), DAGS_FILE, dag_content)
+        # Use explicit unit strings to avoid helper indirection.
+        unit = f"{app}/0"
+        # Use container names from charmcraft.yaml to avoid assumptions.
+        container = CONTAINER_NAMES[app]
+        push_text_file(
+            juju,
+            unit,
+            container,
+            DAGS_FILE,
+            dag_content,
+        )
     print("DAG pushed.")
 
     for app in CORE_APPS:
-        run_in(
-            juju,
-            unit(app),
-            container_for(app),
+        # Use explicit unit strings to avoid helper indirection.
+        unit = f"{app}/0"
+        # Use container names from charmcraft.yaml to avoid assumptions.
+        container = CONTAINER_NAMES[app]
+        # Call juju.cli directly to avoid a thin wrapper around a single method call.
+        juju.cli(
+            "ssh",
+            "--container",
+            container,
+            unit,
             "bash -lc " + shlex.quote("airflow dags reserialize"),
         )
-        run_in(
-            juju,
-            unit(app),
-            container_for(app),
+        # Call juju.cli directly to avoid a thin wrapper around a single method call.
+        juju.cli(
+            "ssh",
+            "--container",
+            container,
+            unit,
             "bash -lc " + shlex.quote(f"airflow dags unpause {dag_id}"),
         )
+    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
     print("Verify DAG discovery and execution")
     discovered = False
     for _ in range(36):
-        out = run_in(
-            juju,
-            unit(get_core_app("scheduler")),
-            container_for(get_core_app("scheduler")),
+        # Use explicit unit strings to avoid helper indirection.
+        scheduler_unit = f"{get_core_app('scheduler')}/0"
+        # Use container names from charmcraft.yaml to avoid assumptions.
+        scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+        # Call juju.cli directly to avoid a thin wrapper around a single method call.
+        out = juju.cli(
+            "ssh",
+            "--container",
+            scheduler_container,
+            scheduler_unit,
             "bash -lc "
             + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
         )
@@ -70,19 +100,31 @@ def test_dag_discovery_and_execution(
     assert discovered, "DAG was not discovered (DAG Processor failed to sync DAG to DB)"
 
     run_id = f"it-{int(time.time())}"
-    run_in(
-        juju,
-        unit(get_core_app("scheduler")),
-        container_for(get_core_app("scheduler")),
+    # Use explicit unit strings to avoid helper indirection.
+    scheduler_unit = f"{get_core_app('scheduler')}/0"
+    # Use container names from charmcraft.yaml to avoid assumptions.
+    scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+    # Call juju.cli directly to avoid a thin wrapper around a single method call.
+    juju.cli(
+        "ssh",
+        "--container",
+        scheduler_container,
+        scheduler_unit,
         "bash -lc " + shlex.quote(f"airflow dags trigger {dag_id} --run-id {run_id}"),
     )
 
     queued_or_running = False
     for _ in range(18):
-        out = run_in(
-            juju,
-            unit(get_core_app("scheduler")),
-            container_for(get_core_app("scheduler")),
+        # Use explicit unit strings to avoid helper indirection.
+        scheduler_unit = f"{get_core_app('scheduler')}/0"
+        # Use container names from charmcraft.yaml to avoid assumptions.
+        scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+        # Call juju.cli directly to avoid a thin wrapper around a single method call.
+        out = juju.cli(
+            "ssh",
+            "--container",
+            scheduler_container,
+            scheduler_unit,
             "bash -lc "
             + shlex.quote(
                 f"PYTHONWARNINGS=ignore NO_COLOR=1 CLICOLOR=0 TERM=dumb airflow dags list-runs {dag_id} --output json"

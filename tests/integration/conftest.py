@@ -3,53 +3,189 @@
 from __future__ import annotations
 
 import base64
+import logging
 import os
+import pathlib
 import shlex
-import uuid
-import pytest
-import jubilant
+import sys
+import time
 import re
 
-from tests.integration.helpers.charm_packaging_helpers import (
-    coordinator_charm_ref,
-    image_resources,
-    pack_all_core_charms,
-)
+import jubilant
+import pytest
+
 from tests.integration.helpers.constants import (
-    CORE_CHARMS,
+    ALL_APPS,
     COORDINATOR_APP,
     COORDINATOR_CHANNEL,
-    COORD_REL,
+    CORE_CHARMS,
     POSTGRES_APP,
     POSTGRES_CHANNEL,
+    COORD_REL,
+    REPO_ROOT,
 )
 
+logger = logging.getLogger(__name__)
 
-def _new_model_name() -> str:
-    """Return a unique model name unless JUJU_MODEL is provided."""
-    return os.environ.get("JUJU_MODEL") or f"jubilant-{uuid.uuid4().hex[:8]}"
+
+def charm_dir(name: str) -> pathlib.Path:
+    """Path to charm directory in repo /charms folder."""
+    return REPO_ROOT / "charms" / name
+
+
+def image_resources() -> dict[str, dict[str, str]]:
+    """Return OCI image resource mappings for core charms."""
+    tag = os.environ.get("AIRFLOW_IMAGE_TAG", "3.1-24.04_edge")
+    base = os.environ.get("AIRFLOW_IMAGE_BASE", "ubuntu/airflow")
+
+    return {
+        "airflow-api-server-k8s": {"airflow-api-server-image": f"{base}:{tag}"},
+        "airflow-dag-processor-k8s": {"airflow-dag-processor-image": f"{base}:{tag}"},
+        "airflow-scheduler-k8s": {"airflow-scheduler-image": f"{base}:{tag}"},
+        "airflow-triggerer-k8s": {"airflow-triggerer-image": f"{base}:{tag}"},
+    }
+
+
+@pytest.fixture(scope="module")
+def juju(request: pytest.FixtureRequest):
+    """Create a temporary Juju model for running tests."""
+    if "JUJU_MODEL" in os.environ:
+        juju = jubilant.Juju(model=os.environ["JUJU_MODEL"], wait_timeout=20 * 60)
+        yield juju
+
+        if request.session.testsfailed:
+            logger.info("Collecting Juju logs...")
+            time.sleep(0.5)
+            log = juju.debug_log(limit=1000)
+            print(log, end="", file=sys.stderr)
+        return
+
+    with jubilant.temp_model(config={"update-status-hook-interval": "10s"}) as juju:
+        juju.wait_timeout = 20 * 60
+        yield juju
+
+        if request.session.testsfailed:
+            logger.info("Collecting Juju logs...")
+            time.sleep(0.5)
+            log = juju.debug_log(limit=1000)
+            print(log, end="", file=sys.stderr)
+
+
+@pytest.fixture(scope="module")
+def coordinator_charm():
+    """Return the coordinator charm reference."""
+    # Use local charm if available, otherwise use charmhub
+    coordinator_path = pathlib.Path("../airflow-coordinator-k8s-operator")
+    if coordinator_path.exists():
+        charm_files = list(coordinator_path.glob("airflow-coordinator-k8s*.charm"))
+        if charm_files:
+            return str(charm_files[0].resolve())
+
+    # Fallback to charmhub
+    return f"ch:{COORDINATOR_APP}"
+
+
+@pytest.fixture(scope="module")
+def core_charms():
+    """Return paths to already-packed core charms."""
+    charm_paths = {}
+    for dir_name, app in CORE_CHARMS:
+        charm_dir_path = charm_dir(dir_name)
+        charm_files = list(charm_dir_path.glob("*.charm"))
+        if not charm_files:
+            raise FileNotFoundError(
+                f"No .charm file found in {charm_dir_path}. Run 'just pack-charms' first."
+            )
+        # Use the most recent .charm file
+        charm_paths[app] = max(charm_files, key=lambda p: p.stat().st_mtime)
+    return charm_paths
+
+
+@pytest.fixture(scope="module")
+def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dict):
+    """Deploy the full Airflow stack."""
+    logger.info("Deploying PostgreSQL...")
+    juju.deploy(POSTGRES_APP, channel=POSTGRES_CHANNEL, trust=True)
+
+    # Wait for PostgreSQL to be ready
+    logger.info("Waiting for PostgreSQL to be active...")
+    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=10 * 60)
+
+    logger.info("Deploying Airflow Coordinator...")
+    if coordinator_charm.startswith("ch:"):
+        juju.deploy(
+            coordinator_charm.replace("ch:", ""),
+            app=COORDINATOR_APP,
+            channel=COORDINATOR_CHANNEL,
+        )
+    else:
+        juju.deploy(coordinator_charm, app=COORDINATOR_APP)
+
+    logger.info("Deploying core charms...")
+    resources_map = image_resources()
+    for component, app in CORE_CHARMS:
+        charm_path = str(core_charms[app])
+        resources = resources_map.get(app, {})
+        juju.deploy(charm_path, app=app, resources=resources)
+
+    logger.info("Integrating coordinator <-> postgres")
+    juju.integrate(f"{COORDINATOR_APP}:postgres", f"{POSTGRES_APP}:database")
+
+    # Wait for coordinator and postgres relation to be established
+    logger.info("Waiting for coordinator-postgres relation to be ready...")
+    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
+
+    logger.info("Integrating all core charms")
+    for _, app in CORE_CHARMS:
+        juju.integrate(f"{COORDINATOR_APP}:{COORD_REL}", f"{app}:{COORD_REL}")
+
+    # Wait for all core charm relations to be established
+    logger.info("Waiting for all core charm relations to be ready...")
+    juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
+
+    # Wait for all apps to be ready
+    logger.info("Waiting for all apps to be active...")
+    juju.wait(lambda st: jubilant.all_active(st, *ALL_APPS), timeout=30 * 60)
 
 
 def unit_name(app: str, n: int = 0) -> str:
-    """Return a unit name for a given app and index."""
+    """Return unit name for app."""
     return f"{app}/{n}"
 
 
 def workload_container_for_app(app: str) -> str:
-    """Given app like airflow-api-server-k8s -> airflow-api-server"""
-    return app[:-4] if app.endswith("-k8s") else app
+    """Get container name for app."""
+    # Remove k8s suffix and return workload container name
+    return app.replace("-k8s", "")
 
 
 def ssh(juju: jubilant.Juju, unit: str, container: str, cmd: str) -> str:
-    """Run a command in a unit container via Juju SSH."""
+    """Run command in unit container via SSH."""
     return juju.cli("ssh", "--container", container, unit, cmd)
 
 
 def ssh_unit(juju: jubilant.Juju, unit: str, cmd: str) -> str:
-    """Run `juju ssh <unit> <cmd>` (no --container). Use when the workload
-    binary (e.g. curl) is available on the unit's default shell but not in a
-    specific container."""
+    """Run command in unit without container specification."""
     return juju.cli("ssh", unit, cmd)
+
+
+def file_exists(juju: jubilant.Juju, unit: str, container: str, path: str) -> bool:
+    """Check if file exists in container."""
+    output = ssh(
+        juju, unit, container, f"test -f {shlex.quote(path)} && echo OK || echo MISSING"
+    )
+    return "OK" in output
+
+
+def pebble_services_text(juju: jubilant.Juju, unit: str, container: str) -> str:
+    """Get pebble services output."""
+    return ssh(juju, unit, container, "pebble services || true")
+
+
+def pebble_service_is_running(services_text: str, service: str) -> bool:
+    """Return True if a Pebble service is active in the services output."""
+    pattern = rf"^{re.escape(service)}\s+enabled\s+active\s+"
+    return re.search(pattern, services_text, flags=re.MULTILINE) is not None
 
 
 def push_text_file(
@@ -73,25 +209,6 @@ def push_text_file(
     ssh(juju, unit, container, cmd)
 
 
-
-def file_exists(juju: jubilant.Juju, unit: str, container: str, path: str) -> bool:
-    """Return True if a file exists in the workload container."""
-    q = shlex.quote(path)
-    out = ssh(juju, unit, container, f"test -f {q} && echo OK || echo MISSING")
-    return "OK" in out
-
-
-def pebble_services_text(juju: jubilant.Juju, unit: str, container: str) -> str:
-    """Return the output of `pebble services` for the container."""
-    return ssh(juju, unit, container, "pebble services || true")
-
-
-def pebble_service_is_running(services_text: str, service: str) -> bool:
-    """Return True if a Pebble service is active in the services output."""
-    pattern = rf"^{re.escape(service)}\s+enabled\s+active\s+"
-    return re.search(pattern, services_text, flags=re.MULTILINE) is not None
-
-
 def remove_relation_if_exists(
     juju: jubilant.Juju, endpoint_a: str, endpoint_b: str
 ) -> None:
@@ -108,156 +225,3 @@ def integrate_if_missing(juju: jubilant.Juju, endpoint_a: str, endpoint_b: str) 
         juju.integrate(endpoint_a, endpoint_b)
     except Exception:
         pass
-
-
-@pytest.fixture(scope="session")
-def juju() -> jubilant.Juju:
-    """Return a Jubilant client for the configured model."""
-    model = _new_model_name()
-    wait_timeout = float(os.environ.get("JUJU_WAIT_TIMEOUT", "600"))
-    return jubilant.Juju(
-        model=model,
-        wait_timeout=wait_timeout,
-        cli_binary=os.environ.get("JUJU", "juju"),
-    )
-
-
-@pytest.fixture(scope="session")
-def keep_model() -> bool:
-    """Return True if the model should be kept after tests."""
-    return os.environ.get("KEEP_MODEL", "0") == "1"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def ensure_model_lifecycle(juju: jubilant.Juju, keep_model: bool):
-    """Create a test model and optionally destroy it after tests."""
-    user_model = os.environ.get("JUJU_MODEL")
-    if user_model:
-        yield
-        return
-
-    juju.add_model(juju.model)
-    yield
-
-    if not keep_model:
-        try:
-            juju.destroy_model(juju.model, destroy_storage=True)
-        except TypeError:
-            juju.cli(
-                "destroy-model",
-                juju.model,
-                "--no-prompt",
-                "--destroy-storage",
-                include_model=False,
-            )
-
-
-@pytest.fixture(scope="session")
-def deployed_stack(juju: jubilant.Juju):
-    """Deploy Postgres, the coordinator, and core charms."""
-    core_charm_files = pack_all_core_charms()
-    resources_map = image_resources()
-
-    coord_ref = coordinator_charm_ref()
-
-    juju.deploy(POSTGRES_APP, app=POSTGRES_APP, channel=POSTGRES_CHANNEL, trust=True)
-    juju.wait(
-        ready=lambda st: jubilant.all_active(st, POSTGRES_APP),
-        error=jubilant.any_error,
-        timeout=30 * 60,
-    )
-
-    print("Deploying coordinator...")
-    juju.deploy(coord_ref, app=COORDINATOR_APP, channel=COORDINATOR_CHANNEL, trust=True)
-
-    for _, app in CORE_CHARMS:
-        charm_path = str(core_charm_files[app])
-        resources = resources_map.get(app, {})
-        print(f"Deploying core charm {app}...")
-        juju.deploy(charm_path, app=app, trust=True, resources=resources)
-
-    print("Integrating coordinator <-> postgres")
-    juju.integrate(f"{COORDINATOR_APP}:postgres", f"{POSTGRES_APP}:database")
-    return True
-
-
-@pytest.fixture(scope="session")
-def relate_core_charms(juju: jubilant.Juju, deployed_stack: bool):
-    """Relate all core charms to the coordinator and wait for readiness."""
-    for _, app in CORE_CHARMS:
-        try:
-            print(f"Integrating coordinator <-> {app}")
-            juju.integrate(f"{COORDINATOR_APP}:{COORD_REL}", f"{app}:{COORD_REL}")
-        except Exception:
-            pass
-
-    core_apps = [app for _, app in CORE_CHARMS]
-
-    juju.wait(
-        ready=lambda st: jubilant.all_active(
-            st, POSTGRES_APP, COORDINATOR_APP, *core_apps
-        ),
-        error=jubilant.any_error,
-        timeout=15 * 60,
-    )
-    return True
-
-
-@pytest.fixture
-def file_exists_fn():
-    """Fixture returning file existence helper."""
-    return file_exists
-
-
-@pytest.fixture
-def pebble_services():
-    """Fixture returning pebble services helper."""
-    return pebble_services_text
-
-
-@pytest.fixture
-def pebble_running():
-    """Fixture returning pebble service status checker."""
-    return pebble_service_is_running
-
-
-@pytest.fixture
-def remove_relation():
-    """Fixture returning relation removal helper."""
-    return remove_relation_if_exists
-
-
-@pytest.fixture
-def integrate_relation():
-    """Fixture returning relation integrate helper."""
-    return integrate_if_missing
-
-
-@pytest.fixture
-def unit():
-    """Fixture returning unit name helper."""
-    return unit_name
-
-
-@pytest.fixture
-def container_for():
-    """Fixture returning workload container name helper."""
-    return workload_container_for_app
-
-
-@pytest.fixture
-def run_in():
-    """Fixture returning container command executor."""
-    return ssh
-
-
-@pytest.fixture
-def run_in_unit():
-    """Fixture returning unit command executor."""
-    return ssh_unit
-
-
-@pytest.fixture
-def push_file():
-    """Fixture returning file push helper."""
-    return push_text_file

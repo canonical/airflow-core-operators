@@ -8,12 +8,16 @@ import time
 import pytest
 import jubilant
 
+from tests.integration.conftest import (
+    file_exists,
+)
 from tests.integration.helpers.airflow_helpers import (
     json_from_airflow,
     read_airflow_config,
 )
 from tests.integration.helpers.constants import (
     AIRFLOW_CONFIG_PATH,
+    CONTAINER_NAMES,
     COORDINATOR_APP,
     COORD_REL,
     CORE_CHARMS,
@@ -25,20 +29,16 @@ from tests.integration.helpers.juju_helpers import find_component_metadata
 @pytest.mark.abort_on_fail
 def test_airflow_config_options_present_and_rewritten_on_relation_change(
     juju: jubilant.Juju,
-    deployed_stack: bool,
-    relate_core_charms: bool,
-    remove_relation,
-    integrate_relation,
-    unit,
-    container_for,
-    run_in,
+    deployed_stack,
 ):
     """Airflow config should be removed on relation break and restored on rejoin."""
     target_app = get_core_app("scheduler")
-    target_unit = unit(target_app)
-    target_container = container_for(target_app)
+    # Use explicit unit strings to avoid helper indirection.
+    target_unit = f"{target_app}/0"
+    # Use container names from charmcraft.yaml to avoid assumptions.
+    target_container = CONTAINER_NAMES[target_app]
 
-    cfg = read_airflow_config(juju, target_unit, target_container, run_in)
+    cfg = read_airflow_config(juju, target_unit, target_container)
 
     assert cfg.get("core", "dags_folder") == "dags"
     assert cfg.get("core", "executor") == "LocalExecutor"
@@ -47,32 +47,27 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
     assert cfg.get("api", "port") == "8080"
     assert cfg.get("logging", "base_log_folder") == "logs"
 
-    remove_relation(
-        juju,
+    # Let relation removal errors surface to fail fast and avoid masking issues.
+    juju.cli(
+        "remove-relation",
         f"{COORDINATOR_APP}:{COORD_REL}",
         f"{target_app}:{COORD_REL}",
     )
 
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
-    missing = run_in(
-        juju,
-        target_unit,
-        target_container,
-        "bash -lc "
-        + shlex.quote(f"test -f {AIRFLOW_CONFIG_PATH} && echo OK || echo MISSING"),
-    )
-    assert "MISSING" in missing
+    # Use file_exists to avoid duplicating file check logic.
+    assert not file_exists(juju, target_unit, target_container, AIRFLOW_CONFIG_PATH)
 
-    integrate_relation(
-        juju,
+    # Let integration errors surface to fail fast and avoid masking issues.
+    juju.integrate(
         f"{COORDINATOR_APP}:{COORD_REL}",
         f"{target_app}:{COORD_REL}",
     )
 
     juju.wait(jubilant.all_agents_idle, timeout=20 * 60)
 
-    cfg = read_airflow_config(juju, target_unit, target_container, run_in)
+    cfg = read_airflow_config(juju, target_unit, target_container)
     assert cfg.get("core", "executor") == "LocalExecutor"
     assert cfg.get("database", "sql_alchemy_conn").startswith("postgresql+psycopg2://")
 
@@ -80,13 +75,15 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
 @pytest.mark.abort_on_fail
 def test_relation_databag_contains_core_metadata(
     juju: jubilant.Juju,
-    unit,
+    deployed_stack,
 ):
     """Each core charm should publish component metadata to the relation databag."""
+    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
     for expected_component, app in CORE_CHARMS:
         matching = find_component_metadata(
             juju,
-            unit(app),
+            # Use explicit unit strings to avoid helper indirection.
+            f"{app}/0",
             COORD_REL,
             expected_component,
         )
@@ -99,16 +96,22 @@ def test_relation_databag_contains_core_metadata(
 @pytest.mark.abort_on_fail
 def test_airflow_cli_stress_dags_list(
     juju: jubilant.Juju,
-    run_in,
-    unit,
-    container_for,
+    deployed_stack,
 ):
     """Airflow CLI should remain responsive under repeated list calls."""
+    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
+
     for _ in range(6):
-        out = run_in(
-            juju,
-            unit(get_core_app("scheduler")),
-            container_for(get_core_app("scheduler")),
+        # Use explicit unit strings to avoid helper indirection.
+        scheduler_unit = f"{get_core_app('scheduler')}/0"
+        # Use container names from charmcraft.yaml to avoid assumptions.
+        scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+        # Call juju.cli directly to avoid a thin wrapper around a single method call.
+        out = juju.cli(
+            "ssh",
+            "--container",
+            scheduler_container,
+            scheduler_unit,
             "bash -lc "
             + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
         )
@@ -116,19 +119,25 @@ def test_airflow_cli_stress_dags_list(
         assert parsed is not None
         time.sleep(5)
 
+
 @pytest.mark.abort_on_fail
 def test_database_connectivity_from_scheduler(
     juju: jubilant.Juju,
-    unit,
-    container_for,
-    run_in,
+    deployed_stack,
 ):
     """Exec into the scheduler container and confirm DB connectivity."""
-    scheduler_unit = unit(get_core_app("scheduler"))
-    scheduler_container = container_for(get_core_app("scheduler"))
+    # Use explicit unit strings to avoid helper indirection.
+    scheduler_unit = f"{get_core_app('scheduler')}/0"
+    # Use container names from charmcraft.yaml to avoid assumptions.
+    scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
 
     check_cmd = "airflow db check || echo 'DB check failed'"
-    out = run_in(
-        juju, scheduler_unit, scheduler_container, "bash -lc " + shlex.quote(check_cmd)
+    # Call juju.cli directly to avoid a thin wrapper around a single method call.
+    out = juju.cli(
+        "ssh",
+        "--container",
+        scheduler_container,
+        scheduler_unit,
+        "bash -lc " + shlex.quote(check_cmd),
     )
     assert "DB check failed" not in out, f"Failed to connect to the DB: {out}"
