@@ -36,8 +36,6 @@ def test_full_stack_goes_active_and_core_services_run(
     deployed_stack,
 ):
     """Full stack should go active and core services should be running."""
-    # The deployed_stack fixture already waits for all apps to be active
-    # Just verify the status
     juju.wait(lambda st: jubilant.all_active(st, *ALL_APPS), timeout=5 * 60)
 
     status = juju.status()
@@ -51,7 +49,6 @@ def test_full_stack_goes_active_and_core_services_run(
 @pytest.mark.abort_on_fail
 def test_pebble_services_and_config_exist(
     juju: jubilant.Juju,
-    deployed_stack,
 ):
     """Pebble services should be active and config should be present."""
     service_name = PEBBLE_SERVICE_NAME
@@ -72,7 +69,6 @@ def test_pebble_services_and_config_exist(
 @pytest.mark.abort_on_fail
 def test_api_health_endpoint_if_available(
     juju: jubilant.Juju,
-    deployed_stack,
 ):
     """API server health endpoint should return healthy when available."""
     api_unit = unit_name(get_core_app("api-server"))
@@ -89,7 +85,6 @@ def test_api_health_endpoint_if_available(
 @pytest.mark.abort_on_fail
 def test_triggerer_health(
     juju: jubilant.Juju,
-    deployed_stack,
 ):
     """Triggerer job should report a healthy status."""
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
@@ -113,7 +108,6 @@ def test_triggerer_health(
 @pytest.mark.abort_on_fail
 def test_airflow_config_cli_values(
     juju: jubilant.Juju,
-    deployed_stack,
 ):
     """Airflow CLI should return expected config values."""
     assert (
@@ -141,7 +135,7 @@ def test_airflow_config_cli_values(
             "logging",
             "base_log_folder",
         )
-        == "logs"
+        == "/opt/airflow/logs"
     )
     assert (
         get_airflow_config_value(
@@ -150,14 +144,13 @@ def test_airflow_config_cli_values(
             "core",
             "dags_folder",
         )
-        == "dags"
+        == "/opt/airflow/dags"
     )
 
 
 @pytest.mark.abort_on_fail
 def test_charm_statuses_on_missing_relation(
     juju: jubilant.Juju,
-    deployed_stack,
 ):
     """Scheduler and coordinator should block if their relation is removed."""
     remove_relation_if_exists(
@@ -191,7 +184,6 @@ def test_charm_statuses_on_missing_relation(
 @pytest.mark.abort_on_fail
 def test_core_charms_wait_when_postgres_scaled_down(
     juju: jubilant.Juju,
-    deployed_stack,
 ):
     """Core charms should go waiting if Postgres is scaled down or removed."""
     integrate_if_missing(

@@ -21,6 +21,10 @@ integration *args: pack-charms
 	#!/usr/bin/bash
 	pdb_options=$(if [ -n "${debug}" ]; then echo "--pdb"; fi)
 	
+	# Use a fixed model name so cleanup can target a known model after tests pass.
+	export JUJU_MODEL=${JUJU_MODEL:-test}
+	# Ensure the model is destroyed only when the integration run succeeds.
+	trap 'status=$?; if [ "$status" -eq 0 ]; then just destroy-model; fi; exit "$status"' EXIT
 	export JUJU_DATA=${JUJU_DATA:-$HOME/.local/share/juju}
 	# Export packed charm paths so tests don't pack or search during execution.
 	export API_SERVER_CHARM_PATH=$(ls -t charms/api-server/*.charm | head -n1)
@@ -38,6 +42,11 @@ integration *args: pack-charms
 clean: clean-charms
 	#!/usr/bin/bash
 	juju models --format json 2>/dev/null | jq -r '.models[] | select(.name | startswith("jubilant-")) | .name' | xargs -r -I {} juju destroy-model --force --destroy-storage --no-prompt {}
+
+destroy-model:
+	#!/usr/bin/bash
+	# Destroy the fixed JUJU_MODEL after successful integration runs.
+	juju destroy-model --force --destroy-storage --no-prompt ${JUJU_MODEL:-test}
 
 lint:
 	uv sync --group lint

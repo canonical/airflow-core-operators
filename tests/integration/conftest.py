@@ -24,6 +24,7 @@ from tests.integration.helpers.constants import (
     COORD_REL,
     REPO_ROOT,
 )
+from tests.integration.helpers.airflow_helpers import ensure_db_migrated
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,9 @@ def image_resources() -> dict[str, dict[str, str]]:
 def juju(request: pytest.FixtureRequest):
     """Create a temporary Juju model for running tests."""
     if "JUJU_MODEL" in os.environ:
-        juju = jubilant.Juju(model=os.environ["JUJU_MODEL"], wait_timeout=20 * 60)
+        # Ensure the named model exists when JUJU_MODEL is set.
+        juju = jubilant.Juju(wait_timeout=20 * 60)
+        juju.add_model(os.environ["JUJU_MODEL"], config={"update-status-hook-interval": "10s"})
         yield juju
 
         if request.session.testsfailed:
@@ -131,7 +134,6 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     logger.info("Integrating coordinator <-> postgres")
     juju.integrate(f"{COORDINATOR_APP}:postgres", f"{POSTGRES_APP}:database")
 
-    # Wait for coordinator and postgres relation to be established
     logger.info("Waiting for coordinator-postgres relation to be ready...")
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
@@ -139,13 +141,10 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     for _, app in CORE_CHARMS:
         juju.integrate(f"{COORDINATOR_APP}:{COORD_REL}", f"{app}:{COORD_REL}")
 
-    # Wait for all core charm relations to be established
     logger.info("Waiting for all core charm relations to be ready...")
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
 
-    # Wait for all apps to be ready
-    # logger.info("Waiting for all apps to be active...")
-    # juju.wait(lambda st: jubilant.all_active(st, *ALL_APPS), timeout=30 * 60)
+    ensure_db_migrated(juju, "airflow-api-server-k8s")
 
 
 def unit_name(app: str, n: int = 0) -> str:

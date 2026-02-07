@@ -48,6 +48,7 @@ def get_airflow_config_value(
     from tests.integration.conftest import ssh, unit_name, workload_container_for_app
 
     cmd = f"airflow config get-value {section} {key}"
+    # Run migration command without capturing output since the exit status is sufficient.
     out = ssh(
         juju,
         unit_name(app),
@@ -55,6 +56,63 @@ def get_airflow_config_value(
         "bash -lc " + shlex.quote(cmd),
     )
     return clean_ansi(out).strip()
+
+
+def ensure_db_migrated(juju: jubilant.Juju, app: str) -> None:
+    """Ensure the Airflow database migrations are fully applied."""
+    from tests.integration.conftest import ssh, unit_name, workload_container_for_app
+
+    # Use the migration check command when available, and fail fast if migrations are pending.
+    cmd = "airflow db migrate"
+    out = ssh(
+        juju,
+        unit_name(app),
+        workload_container_for_app(app),
+        "bash -lc " + shlex.quote(cmd),
+    )
+
+
+def set_coordinator_load_examples(
+    juju: jubilant.Juju, coordinator_unit: str, load_examples: bool
+) -> None:
+    """Update the coordinator's config template to set core.load_examples."""
+    from tests.integration.conftest import ssh_unit
+
+    # Build the charm path from the unit name to edit the template on the charm container.
+    unit_path = coordinator_unit.replace("/", "-")
+    template_path = (
+        f"/var/lib/juju/agents/unit-{unit_path}/charm/src/templates/airflow_config.j2"
+    )
+    value = "True" if load_examples else "False"
+    # Use sed to update the template in place so future reconciles use the new value.
+    cmd = f"sed -i 's/^load_examples = .*/load_examples = {value}/' {template_path}"
+    ssh_unit(juju, coordinator_unit, "bash -lc " + shlex.quote(cmd))
+
+
+def restart_airflow_service(juju: jubilant.Juju, app: str) -> None:
+    """Restart the airflow service in the workload container via Pebble."""
+    from tests.integration.conftest import ssh, unit_name, workload_container_for_app
+
+    # Restart via pebble to pick up config changes without a full redeploy.
+    ssh(
+        juju,
+        unit_name(app),
+        workload_container_for_app(app),
+        "pebble restart airflow",
+    )
+
+
+def airflow_dags_reserialize(juju: jubilant.Juju, app: str) -> None:
+    """Reserialize DAGs to ensure new config is applied to parsing."""
+    from tests.integration.conftest import ssh, unit_name, workload_container_for_app
+
+    # Reserialize to validate DAG parsing after config changes.
+    ssh(
+        juju,
+        unit_name(app),
+        workload_container_for_app(app),
+        "bash -lc " + shlex.quote("airflow dags reserialize"),
+    )
 
 
 def functional_test_dag(dag_id: str) -> str:

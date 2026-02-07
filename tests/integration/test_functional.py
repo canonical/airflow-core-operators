@@ -12,8 +12,11 @@ from tests.integration.conftest import (
     file_exists,
 )
 from tests.integration.helpers.airflow_helpers import (
+    airflow_dags_reserialize,  # Use helper to reserialize after config changes.
     json_from_airflow,
     read_airflow_config,
+    restart_airflow_service,  # Use helper to restart airflow via pebble.
+    set_coordinator_load_examples,  # Use helper to update coordinator template.
 )
 from tests.integration.helpers.constants import (
     AIRFLOW_CONFIG_PATH,
@@ -47,7 +50,6 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
     assert cfg.get("api", "port") == "8080"
     assert cfg.get("logging", "base_log_folder") == "logs"
 
-    # Let relation removal errors surface to fail fast and avoid masking issues.
     juju.cli(
         "remove-relation",
         f"{COORDINATOR_APP}:{COORD_REL}",
@@ -56,10 +58,8 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
 
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
-    # Use file_exists to avoid duplicating file check logic.
     assert not file_exists(juju, target_unit, target_container, AIRFLOW_CONFIG_PATH)
 
-    # Let integration errors surface to fail fast and avoid masking issues.
     juju.integrate(
         f"{COORDINATOR_APP}:{COORD_REL}",
         f"{target_app}:{COORD_REL}",
@@ -75,14 +75,12 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
 @pytest.mark.abort_on_fail
 def test_relation_databag_contains_core_metadata(
     juju: jubilant.Juju,
-    deployed_stack,
 ):
     """Each core charm should publish component metadata to the relation databag."""
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
     for expected_component, app in CORE_CHARMS:
         matching = find_component_metadata(
             juju,
-            # Use explicit unit strings to avoid helper indirection.
             f"{app}/0",
             COORD_REL,
             expected_component,
@@ -96,17 +94,13 @@ def test_relation_databag_contains_core_metadata(
 @pytest.mark.abort_on_fail
 def test_airflow_cli_stress_dags_list(
     juju: jubilant.Juju,
-    deployed_stack,
 ):
     """Airflow CLI should remain responsive under repeated list calls."""
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
     for _ in range(6):
-        # Use explicit unit strings to avoid helper indirection.
         scheduler_unit = f"{get_core_app('scheduler')}/0"
-        # Use container names from charmcraft.yaml to avoid assumptions.
         scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
-        # Call juju.cli directly to avoid a thin wrapper around a single method call.
         out = juju.cli(
             "ssh",
             "--container",
@@ -123,16 +117,12 @@ def test_airflow_cli_stress_dags_list(
 @pytest.mark.abort_on_fail
 def test_database_connectivity_from_scheduler(
     juju: jubilant.Juju,
-    deployed_stack,
 ):
     """Exec into the scheduler container and confirm DB connectivity."""
-    # Use explicit unit strings to avoid helper indirection.
     scheduler_unit = f"{get_core_app('scheduler')}/0"
-    # Use container names from charmcraft.yaml to avoid assumptions.
     scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
 
     check_cmd = "airflow db check || echo 'DB check failed'"
-    # Call juju.cli directly to avoid a thin wrapper around a single method call.
     out = juju.cli(
         "ssh",
         "--container",
@@ -141,3 +131,51 @@ def test_database_connectivity_from_scheduler(
         "bash -lc " + shlex.quote(check_cmd),
     )
     assert "DB check failed" not in out, f"Failed to connect to the DB: {out}"
+
+
+@pytest.mark.abort_on_fail
+def test_config_change_propagates_and_dags_reserialize(
+    juju: jubilant.Juju,
+):
+    """Config changes in coordinator should propagate and allow DAG reserialize."""
+    coordinator_unit = f"{COORDINATOR_APP}/0"
+    # Update coordinator template to enable example DAGs.
+    set_coordinator_load_examples(juju, coordinator_unit, True)
+
+    # Refresh relations to force core charms to pull the updated template.
+    for _, app in CORE_CHARMS:
+        juju.cli(
+            "remove-relation",
+            f"{COORDINATOR_APP}:{COORD_REL}",
+            f"{app}:{COORD_REL}",
+        )
+        juju.integrate(f"{COORDINATOR_APP}:{COORD_REL}", f"{app}:{COORD_REL}")
+
+    juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
+
+    # Restart airflow services to pick up the new config.
+    for _, app in CORE_CHARMS:
+        restart_airflow_service(juju, app)
+
+    # Reserialize DAGs after the restart to validate parsing with new config.
+    for _, app in CORE_CHARMS:
+        airflow_dags_reserialize(juju, app)
+
+    # Assert config propagation by checking load_examples across all core charms.
+    for _, app in CORE_CHARMS:
+        cfg = read_airflow_config(juju, f"{app}/0", CONTAINER_NAMES[app])
+        assert cfg.get("core", "load_examples") == "True", (
+            f"Expected load_examples=True in {app} config"
+        )
+
+    # Validate DAG listing still works after config update.
+    scheduler_unit = f"{get_core_app('scheduler')}/0"
+    scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+    out = juju.cli(
+        "ssh",
+        "--container",
+        scheduler_container,
+        scheduler_unit,
+        "bash -lc " + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
+    )
+    assert isinstance(json_from_airflow(out), list)
