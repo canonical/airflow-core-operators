@@ -17,7 +17,7 @@ pack-charms:
 clean-charms:
 	find charms -name "*.charm" -delete
 
-integration debug="" file="": pack-charms
+integration *args: pack-charms
 	#!/usr/bin/bash
 	pdb_options=$(if [ -n "${debug}" ]; then echo "--pdb"; fi)
 	
@@ -32,8 +32,8 @@ integration debug="" file="": pack-charms
 	export TRIGGERER_CHARM_PATH=$(ls -t charms/triggerer/*.charm | head -n1)
 	
 	uv sync --group integration
-	# Allow running a single test file when `file` is provided.
-	uv run tox -e integration -- ${pdb_options} ${file}
+	# Allow running a single test file when a positional arg is provided.
+	uv run tox -e integration -- ${pdb_options} {{args}}
 
 clean: clean-charms
 	#!/usr/bin/bash

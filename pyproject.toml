@@ -8,6 +8,8 @@ dependencies = []
 
 [dependency-groups]
 integration = [
+  # Include tox so `just integration` can invoke it without missing binary errors.
+  "tox",
   "pytest",
   "jubilant",
   "requests",

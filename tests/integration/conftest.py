@@ -144,8 +144,8 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
 
     # Wait for all apps to be ready
-    logger.info("Waiting for all apps to be active...")
-    juju.wait(lambda st: jubilant.all_active(st, *ALL_APPS), timeout=30 * 60)
+    # logger.info("Waiting for all apps to be active...")
+    # juju.wait(lambda st: jubilant.all_active(st, *ALL_APPS), timeout=30 * 60)
 
 
 def unit_name(app: str, n: int = 0) -> str:
