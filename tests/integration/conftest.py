@@ -24,9 +24,18 @@ from tests.integration.helpers.constants import (
     COORD_REL,
     REPO_ROOT,
 )
-from tests.integration.helpers.airflow_helpers import ensure_db_migrated
+from tests.integration.helpers.airflow_helpers import (
+    ensure_db_migrated,
+    get_airflow_config_value,
+)
 
 logger = logging.getLogger(__name__)
+
+REQUIRED_APP_NAMES = ALL_APPS
+EXPECTED_RELATIONS = [
+    (COORDINATOR_APP, "postgres"),
+    *[(app, COORD_REL) for _, app in CORE_CHARMS],
+]
 
 
 def charm_dir(name: str) -> pathlib.Path:
@@ -144,7 +153,54 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     logger.info("Waiting for all core charm relations to be ready...")
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
 
+    logger.info("Waiting for Airflow to use Postgres...")
+    deadline = time.time() + 5 * 60
+    while time.time() < deadline:
+        conn = get_airflow_config_value(
+            juju,
+            "airflow-api-server-k8s",
+            "database",
+            "sql_alchemy_conn",
+        )
+        if conn.startswith("postgresql+psycopg2://"):
+            break
+        time.sleep(5)
+    else:
+        raise RuntimeError("Airflow database still not configured for Postgres")
+
     ensure_db_migrated(juju, "airflow-api-server-k8s")
+
+
+@pytest.fixture(autouse=True)
+def invariant_checker(juju: jubilant.Juju):
+    all_apps_deployed = all(app in juju.status().apps for app in REQUIRED_APP_NAMES)
+
+    expected_relations_present = all(
+        juju.status().apps.get(relation_info[0])
+        and len(juju.status().apps[relation_info[0]].relations.get(relation_info[1], []))
+        for relation_info in EXPECTED_RELATIONS
+    )
+
+    if not all_apps_deployed or not expected_relations_present:
+        logger.info("Skipping invariant pre-check as model (apps + ready) not present yet")
+    else:
+        assert jubilant.all_active(juju.status())
+
+    yield
+
+    all_apps_deployed = all(app in juju.status().apps for app in REQUIRED_APP_NAMES)
+
+    expected_relations_present = all(
+        juju.status().apps.get(relation_info[0])
+        and len(juju.status().apps[relation_info[0]].relations.get(relation_info[1], []))
+        for relation_info in EXPECTED_RELATIONS
+    )
+
+    if not all_apps_deployed or not expected_relations_present:
+        logger.info("Skipping invariant post-check as model (apps + ready) not present yet")
+        return
+
+    assert jubilant.all_active(juju.status())
 
 
 def unit_name(app: str, n: int = 0) -> str:
