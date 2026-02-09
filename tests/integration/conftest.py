@@ -148,8 +148,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     logger.info("Integrating coordinator <-> postgres")
     juju.integrate(f"{COORDINATOR_APP}:postgres", f"{POSTGRES_APP}:database")
 
-    logger.info("Waiting for coordinator-postgres relation to be ready...")
-    juju.wait(jubilant.all_agents_idle, timeout=30 * 60)
+    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60)
 
     logger.info("Integrating all core charms")
     for _, app in CORE_CHARMS:
