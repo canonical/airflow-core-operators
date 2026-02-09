@@ -21,6 +21,7 @@ from tests.integration.helpers.constants import (
     CORE_CHARMS,
     POSTGRES_APP,
     POSTGRES_CHANNEL,
+    POSTGRES_PROFILE,
     COORD_REL,
     REPO_ROOT,
 )
@@ -117,7 +118,12 @@ def core_charms():
 def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dict):
     """Deploy the full Airflow stack."""
     logger.info("Deploying PostgreSQL...")
-    juju.deploy(POSTGRES_APP, channel=POSTGRES_CHANNEL, trust=True)
+    juju.deploy(
+        POSTGRES_APP,
+        channel=POSTGRES_CHANNEL,
+        trust=True,
+        config={"profile": POSTGRES_PROFILE},
+    )
 
     # Wait for PostgreSQL to be ready
     logger.info("Waiting for PostgreSQL to be active...")

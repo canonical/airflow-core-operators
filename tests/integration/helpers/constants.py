@@ -52,6 +52,7 @@ COORDINATOR_APP = "airflow-coordinator-k8s"
 ALL_APPS = [POSTGRES_APP, COORDINATOR_APP] + CORE_APPS
 
 POSTGRES_CHANNEL = os.environ.get("POSTGRES_CHANNEL", "14/stable")
+POSTGRES_PROFILE = os.environ.get("POSTGRES_PROFILE", "testing")
 COORDINATOR_CHANNEL = os.environ.get("COORDINATOR_CHANNEL", "3.1/edge")
 
 COORD_REL = os.environ.get("COORD_REL", "airflow-coordinator")
