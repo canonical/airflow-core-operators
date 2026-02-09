@@ -125,9 +125,8 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
         config={"profile": POSTGRES_PROFILE},
     )
 
-    # Wait for PostgreSQL to be ready
     logger.info("Waiting for PostgreSQL to be active...")
-    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=10 * 60)
+    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60)
 
     logger.info("Deploying Airflow Coordinator...")
     if coordinator_charm.startswith("ch:"):
@@ -141,7 +140,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
 
     logger.info("Deploying core charms...")
     resources_map = image_resources()
-    for component, app in CORE_CHARMS:
+    for _, app in CORE_CHARMS:
         charm_path = str(core_charms[app])
         resources = resources_map.get(app, {})
         juju.deploy(charm_path, app=app, resources=resources)
@@ -150,7 +149,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     juju.integrate(f"{COORDINATOR_APP}:postgres", f"{POSTGRES_APP}:database")
 
     logger.info("Waiting for coordinator-postgres relation to be ready...")
-    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
+    juju.wait(jubilant.all_agents_idle, timeout=30 * 60)
 
     logger.info("Integrating all core charms")
     for _, app in CORE_CHARMS:

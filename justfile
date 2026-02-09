@@ -21,22 +21,14 @@ integration *args: pack-charms
 	#!/usr/bin/bash
 	pdb_options=$(if [ -n "${debug}" ]; then echo "--pdb"; fi)
 	
-	# Use a fixed model name so cleanup can target a known model after tests pass.
 	export JUJU_MODEL=${JUJU_MODEL:-test}
-	# Ensure the model is destroyed only when the integration run succeeds.
-	trap 'status=$?; if [ "$status" -eq 0 ]; then just destroy-model; fi; exit "$status"' EXIT
 	export JUJU_DATA=${JUJU_DATA:-$HOME/.local/share/juju}
-	# Export packed charm paths so tests don't pack or search during execution.
 	export API_SERVER_CHARM_PATH=$(ls -t charms/api-server/*.charm | head -n1)
-	# Export packed charm paths so tests don't pack or search during execution.
 	export DAG_PROCESSOR_CHARM_PATH=$(ls -t charms/dag-processor/*.charm | head -n1)
-	# Export packed charm paths so tests don't pack or search during execution.
 	export SCHEDULER_CHARM_PATH=$(ls -t charms/scheduler/*.charm | head -n1)
-	# Export packed charm paths so tests don't pack or search during execution.
 	export TRIGGERER_CHARM_PATH=$(ls -t charms/triggerer/*.charm | head -n1)
 	
 	uv sync --group integration
-	# Allow running a single test file when a positional arg is provided.
 	uv run tox -e integration -- ${pdb_options} {{args}}
 
 clean: clean-charms
@@ -45,7 +37,6 @@ clean: clean-charms
 
 destroy-model:
 	#!/usr/bin/bash
-	# Destroy the fixed JUJU_MODEL after successful integration runs.
 	juju destroy-model --force --destroy-storage --no-prompt ${JUJU_MODEL:-test}
 
 lint:
