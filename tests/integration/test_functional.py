@@ -139,36 +139,22 @@ def test_config_change_propagates_and_dags_reserialize(
 ):
     """Config changes in coordinator should propagate and allow DAG reserialize."""
     coordinator_unit = f"{COORDINATOR_APP}/0"
-    # Update coordinator template to enable example DAGs.
     set_coordinator_load_examples(juju, coordinator_unit, True)
-
-    # Refresh relations to force core charms to pull the updated template.
-    for _, app in CORE_CHARMS:
-        juju.cli(
-            "remove-relation",
-            f"{COORDINATOR_APP}:{COORD_REL}",
-            f"{app}:{COORD_REL}",
-        )
-        juju.integrate(f"{COORDINATOR_APP}:{COORD_REL}", f"{app}:{COORD_REL}")
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
 
-    # Restart airflow services to pick up the new config.
     for _, app in CORE_CHARMS:
         restart_airflow_service(juju, app)
 
-    # Reserialize DAGs after the restart to validate parsing with new config.
     for _, app in CORE_CHARMS:
         airflow_dags_reserialize(juju, app)
 
-    # Assert config propagation by checking load_examples across all core charms.
     for _, app in CORE_CHARMS:
         cfg = read_airflow_config(juju, f"{app}/0", CONTAINER_NAMES[app])
         assert cfg.get("core", "load_examples") == "True", (
             f"Expected load_examples=True in {app} config"
         )
 
-    # Validate DAG listing still works after config update.
     scheduler_unit = f"{get_core_app('scheduler')}/0"
     scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
     out = juju.cli(
