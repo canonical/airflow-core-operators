@@ -135,7 +135,7 @@ def test_airflow_config_cli_values(
             "logging",
             "base_log_folder",
         )
-        == "/opt/airflow/logs"
+        == "logs"
     )
     assert (
         get_airflow_config_value(
@@ -144,7 +144,7 @@ def test_airflow_config_cli_values(
             "core",
             "dags_folder",
         )
-        == "/opt/airflow/dags"
+        == "dags"
     )
 
 

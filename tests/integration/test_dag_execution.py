@@ -33,9 +33,7 @@ def test_dag_discovery_and_execution(
 
     print("Pushing DAG content:")
     for app in CORE_APPS:
-        # Use explicit unit strings to avoid helper indirection.
         unit = f"{app}/0"
-        # Use container names from charmcraft.yaml to avoid assumptions.
         container = CONTAINER_NAMES[app]
         push_text_file(
             juju,
@@ -47,11 +45,8 @@ def test_dag_discovery_and_execution(
     print("DAG pushed.")
 
     for app in CORE_APPS:
-        # Use explicit unit strings to avoid helper indirection.
         unit = f"{app}/0"
-        # Use container names from charmcraft.yaml to avoid assumptions.
         container = CONTAINER_NAMES[app]
-        # Call juju.cli directly to avoid a thin wrapper around a single method call.
         juju.cli(
             "ssh",
             "--container",
@@ -59,7 +54,6 @@ def test_dag_discovery_and_execution(
             unit,
             "bash -lc " + shlex.quote("airflow dags reserialize"),
         )
-        # Call juju.cli directly to avoid a thin wrapper around a single method call.
         juju.cli(
             "ssh",
             "--container",
@@ -73,11 +67,8 @@ def test_dag_discovery_and_execution(
     print("Verify DAG discovery and execution")
     discovered = False
     for _ in range(36):
-        # Use explicit unit strings to avoid helper indirection.
         scheduler_unit = f"{get_core_app('scheduler')}/0"
-        # Use container names from charmcraft.yaml to avoid assumptions.
         scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
-        # Call juju.cli directly to avoid a thin wrapper around a single method call.
         out = juju.cli(
             "ssh",
             "--container",
@@ -100,11 +91,8 @@ def test_dag_discovery_and_execution(
     assert discovered, "DAG was not discovered (DAG Processor failed to sync DAG to DB)"
 
     run_id = f"it-{int(time.time())}"
-    # Use explicit unit strings to avoid helper indirection.
     scheduler_unit = f"{get_core_app('scheduler')}/0"
-    # Use container names from charmcraft.yaml to avoid assumptions.
     scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
-    # Call juju.cli directly to avoid a thin wrapper around a single method call.
     juju.cli(
         "ssh",
         "--container",
@@ -115,11 +103,8 @@ def test_dag_discovery_and_execution(
 
     queued_or_running = False
     for _ in range(18):
-        # Use explicit unit strings to avoid helper indirection.
         scheduler_unit = f"{get_core_app('scheduler')}/0"
-        # Use container names from charmcraft.yaml to avoid assumptions.
         scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
-        # Call juju.cli directly to avoid a thin wrapper around a single method call.
         out = juju.cli(
             "ssh",
             "--container",

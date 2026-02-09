@@ -154,7 +154,6 @@ def unit_name(app: str, n: int = 0) -> str:
 
 def workload_container_for_app(app: str) -> str:
     """Get container name for app."""
-    # Remove k8s suffix and return workload container name
     return app.replace("-k8s", "")
 
 
