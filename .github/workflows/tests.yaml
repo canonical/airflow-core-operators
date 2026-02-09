@@ -106,3 +106,7 @@ jobs:
       
       - name: Run integration test file
         run: just integration ${{ matrix.test_file }}
+
+      - name: Get system state (if failure)
+        if: failure()
+        run: just get-system-state
