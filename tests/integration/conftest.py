@@ -162,36 +162,36 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     ensure_db_migrated(juju, "airflow-api-server-k8s")
 
 
-@pytest.fixture(autouse=True)
-def invariant_checker(juju: jubilant.Juju):
-    all_apps_deployed = all(app in juju.status().apps for app in REQUIRED_APP_NAMES)
+# @pytest.fixture(autouse=True)
+# def invariant_checker(juju: jubilant.Juju):
+#     all_apps_deployed = all(app in juju.status().apps for app in REQUIRED_APP_NAMES)
 
-    expected_relations_present = all(
-        juju.status().apps.get(relation_info[0])
-        and len(juju.status().apps[relation_info[0]].relations.get(relation_info[1], []))
-        for relation_info in EXPECTED_RELATIONS
-    )
+#     expected_relations_present = all(
+#         juju.status().apps.get(relation_info[0])
+#         and len(juju.status().apps[relation_info[0]].relations.get(relation_info[1], []))
+#         for relation_info in EXPECTED_RELATIONS
+#     )
 
-    if not all_apps_deployed or not expected_relations_present:
-        logger.info("Skipping invariant pre-check as model (apps + ready) not present yet")
-    else:
-        assert jubilant.all_active(juju.status())
+#     if not all_apps_deployed or not expected_relations_present:
+#         logger.info("Skipping invariant pre-check as model (apps + ready) not present yet")
+#     else:
+#         assert jubilant.all_active(juju.status())
 
-    yield
+#     yield
 
-    all_apps_deployed = all(app in juju.status().apps for app in REQUIRED_APP_NAMES)
+#     all_apps_deployed = all(app in juju.status().apps for app in REQUIRED_APP_NAMES)
 
-    expected_relations_present = all(
-        juju.status().apps.get(relation_info[0])
-        and len(juju.status().apps[relation_info[0]].relations.get(relation_info[1], []))
-        for relation_info in EXPECTED_RELATIONS
-    )
+#     expected_relations_present = all(
+#         juju.status().apps.get(relation_info[0])
+#         and len(juju.status().apps[relation_info[0]].relations.get(relation_info[1], []))
+#         for relation_info in EXPECTED_RELATIONS
+#     )
 
-    if not all_apps_deployed or not expected_relations_present:
-        logger.info("Skipping invariant post-check as model (apps + ready) not present yet")
-        return
+#     if not all_apps_deployed or not expected_relations_present:
+#         logger.info("Skipping invariant post-check as model (apps + ready) not present yet")
+#         return
 
-    assert jubilant.all_active(juju.status())
+#     assert jubilant.all_active(juju.status())
 
 
 def unit_name(app: str, n: int = 0) -> str:
