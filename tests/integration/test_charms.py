@@ -1,5 +1,5 @@
 """Integration tests validating core charm behavior."""
-
+# from tenacity import retry, stop_after_attempt
 from __future__ import annotations
 
 import pytest
@@ -25,7 +25,7 @@ from tests.integration.helpers.constants import (
     COORD_REL,
     CORE_CHARMS,
     PEBBLE_SERVICE_NAME,
-    POSTGRES_APP,
+    PGBOUNCER_APP,
     get_core_app,
 )
 
@@ -179,6 +179,11 @@ def test_charm_statuses_on_missing_relation(
             assert app_status.is_waiting, (
                 f"Expected {app} waiting, got {app_status.app_status.current}"
             )
+    integrate_if_missing(
+        juju,
+        f"{COORDINATOR_APP}:{COORD_REL}",
+        f"{get_core_app('scheduler')}:{COORD_REL}",
+    )
 
 
 @pytest.mark.abort_on_fail
@@ -186,12 +191,12 @@ def test_core_charms_wait_when_postgres_scaled_down(
     juju: jubilant.Juju,
 ):
     """Core charms should go waiting if Postgres is scaled down or removed."""
-    integrate_if_missing(
+    
+    remove_relation_if_exists(
         juju,
-        f"{COORDINATOR_APP}:{COORD_REL}",
-        f"{get_core_app('scheduler')}:{COORD_REL}",
+        f"{PGBOUNCER_APP}:database",
+        f"{COORDINATOR_APP}:postgres",
     )
-    juju.cli("remove-application", POSTGRES_APP, "--no-prompt", "--force")
 
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 

@@ -46,13 +46,15 @@ CONTAINER_NAMES = {
 }
 
 POSTGRES_APP = "postgresql-k8s"
+PGBOUNCER_APP = os.environ.get("PGBOUNCER_APP", "pgbouncer-k8s")
 COORDINATOR_APP = "airflow-coordinator-k8s"
 
 # All applications in the deployment
-ALL_APPS = [POSTGRES_APP, COORDINATOR_APP] + CORE_APPS
+ALL_APPS = [POSTGRES_APP, PGBOUNCER_APP, COORDINATOR_APP] + CORE_APPS
 
 POSTGRES_CHANNEL = os.environ.get("POSTGRES_CHANNEL", "14/stable")
 POSTGRES_PROFILE = os.environ.get("POSTGRES_PROFILE", "testing")
+PGBOUNCER_CHANNEL = os.environ.get("PGBOUNCER_CHANNEL")
 COORDINATOR_CHANNEL = os.environ.get("COORDINATOR_CHANNEL", "3.1/edge")
 
 COORD_REL = os.environ.get("COORD_REL", "airflow-coordinator")
