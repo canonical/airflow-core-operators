@@ -111,70 +111,6 @@ def core_charms():
         charm_paths[app] = max(charm_files, key=lambda p: p.stat().st_mtime)
     return charm_paths
 
-
-# @pytest.fixture(scope="module")
-# def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dict):
-#     """Deploy the full Airflow stack."""
-#     logger.info("Deploying PostgreSQL...")
-#     juju.deploy(
-#         POSTGRES_APP,
-#         channel=POSTGRES_CHANNEL,
-#         trust=True,
-#         config={"profile": POSTGRES_PROFILE},
-#     )
-#
-#     logger.info("Waiting for PostgreSQL to be active...")
-#     # TODO(issue): Remove this workaround once the PostgreSQL charm error issue is resolved.
-#     deadline = time.monotonic() + 30 * 60
-#     while True:
-#         status = juju.status()
-#         app_status = status.apps.get(POSTGRES_APP)
-#         if app_status and app_status.status == "active":
-#             break
-#         if time.monotonic() >= deadline:
-#             raise TimeoutError("PostgreSQL did not reach active status within timeout")
-#         if app_status and app_status.status == "error":
-#             logger.warning(
-#                 "PostgreSQL in error state, allowing retry until it becomes active"
-#             )
-#         time.sleep(5)
-#
-#     logger.info("Deploying Airflow Coordinator...")
-#     if coordinator_charm.startswith("ch:"):
-#         juju.deploy(
-#             coordinator_charm.replace("ch:", ""),
-#             app=COORDINATOR_APP,
-#             channel=COORDINATOR_CHANNEL,
-#         )
-#     else:
-#         juju.deploy(coordinator_charm, app=COORDINATOR_APP)
-#
-#     logger.info("Deploying core charms...")
-#     resources_map = image_resources()
-#     for _, app in CORE_CHARMS:
-#         charm_path = str(core_charms[app])
-#         resources = resources_map.get(app, {})
-#         juju.deploy(charm_path, app=app, resources=resources)
-#
-#     logger.info("Integrating coordinator <-> postgres")
-#     juju.integrate(f"{COORDINATOR_APP}:postgres", f"{POSTGRES_APP}:database")
-#
-#     juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60)
-#
-#     logger.info("Integrating all core charms")
-#     for _, app in CORE_CHARMS:
-#         juju.integrate(f"{COORDINATOR_APP}:{COORD_REL}", f"{app}:{COORD_REL}")
-#
-#     logger.info("Waiting for all core charm relations to be ready...")
-#     juju.wait(jubilant.all_agents_idle, timeout=30 * 60)
-#     juju.wait(
-#         ready=lambda st: jubilant.all_active(st, *ALL_APPS),
-#         timeout=30 * 60
-#     )
-#
-#     ensure_db_migrated(juju, "airflow-api-server-k8s")
-
-
 @pytest.fixture(scope="module")
 def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dict):
     """Deploy the full Airflow stack with PgBouncer in front of PostgreSQL."""
@@ -187,7 +123,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     )
 
     logger.info("Waiting for PostgreSQL to be active...")
-    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60, successes = 3)
+    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60, successes = 5, delay = 30)
 
     logger.info("Deploying PgBouncer...")
     pgbouncer_kwargs = {"app": PGBOUNCER_APP, "trust": True}
@@ -218,7 +154,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     logger.info("Integrating pgbouncer <-> postgres")
     juju.integrate(f"{PGBOUNCER_APP}:backend-database", f"{POSTGRES_APP}:database")
 
-    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60)
+    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60, successes = 5, delay = 30)
 
     logger.info("Integrating all core charms")
     for _, app in CORE_CHARMS:

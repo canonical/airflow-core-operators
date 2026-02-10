@@ -187,7 +187,7 @@ def test_charm_statuses_on_missing_relation(
 
 
 @pytest.mark.abort_on_fail
-def test_core_charms_wait_when_postgres_scaled_down(
+def test_core_charms_wait_when_database_unavailable(
     juju: jubilant.Juju,
 ):
     """Core charms should go waiting if Postgres is scaled down or removed."""
