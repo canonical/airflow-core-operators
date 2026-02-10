@@ -152,21 +152,12 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
 
     logger.info("Waiting for all core charm relations to be ready...")
     juju.wait(jubilant.all_agents_idle, timeout=30 * 60)
-    juju.wait(lambda st: jubilant.all_active(st, ALL_APPS), timeout=30 * 60)
-    # logger.info("Waiting for Airflow to use Postgres...")
-    # deadline = time.time() + 5 * 60
-    # while time.time() < deadline:
-    #     conn = get_airflow_config_value(
-    #         juju,
-    #         "airflow-api-server-k8s",
-    #         "database",
-    #         "sql_alchemy_conn",
-    #     )
-    #     if conn.startswith("postgresql+psycopg2://"):
-    #         break
-    #     time.sleep(5)
-    # else:
-    #     raise RuntimeError("Airflow database still not configured for Postgres")
+    juju.wait(
+        ready=lambda st: jubilant.all_active(st, *ALL_APPS),
+        error=jubilant.any_error, 
+        timeout=30 * 60
+    )
+   
 
     ensure_db_migrated(juju, "airflow-api-server-k8s")
 
