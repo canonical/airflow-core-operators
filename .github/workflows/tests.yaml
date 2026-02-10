@@ -122,8 +122,7 @@ jobs:
 
           uv tool install tox
           sudo snap install just --classic
-      - name: Run tmate Session
-        uses: mxschmitt/action-tmate@v3
+      
       - name: Run integration test file
         run: just integration ${{ matrix.test_file }}
 
