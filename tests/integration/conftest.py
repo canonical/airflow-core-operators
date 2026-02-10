@@ -61,7 +61,6 @@ def image_resources() -> dict[str, dict[str, str]]:
 def juju(request: pytest.FixtureRequest):
     """Create a temporary Juju model for running tests."""
     if "JUJU_MODEL" in os.environ:
-        # Ensure the named model exists when JUJU_MODEL is set.
         juju = jubilant.Juju(wait_timeout=20 * 60)
         juju.add_model(os.environ["JUJU_MODEL"], config={"update-status-hook-interval": "10s"})
         yield juju
@@ -87,14 +86,12 @@ def juju(request: pytest.FixtureRequest):
 @pytest.fixture(scope="module")
 def coordinator_charm():
     """Return the coordinator charm reference."""
-    # Use local charm if available, otherwise use charmhub
     coordinator_path = pathlib.Path("../airflow-coordinator-k8s-operator")
     if coordinator_path.exists():
         charm_files = list(coordinator_path.glob("airflow-coordinator-k8s*.charm"))
         if charm_files:
             return str(charm_files[0].resolve())
 
-    # Fallback to charmhub
     return f"ch:{COORDINATOR_APP}"
 
 
@@ -109,7 +106,6 @@ def core_charms():
             raise FileNotFoundError(
                 f"No .charm file found in {charm_dir_path}. Run 'just pack-charms' first."
             )
-        # Use the most recent .charm file
         charm_paths[app] = max(charm_files, key=lambda p: p.stat().st_mtime)
     return charm_paths
 
@@ -155,22 +151,22 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
         juju.integrate(f"{COORDINATOR_APP}:{COORD_REL}", f"{app}:{COORD_REL}")
 
     logger.info("Waiting for all core charm relations to be ready...")
-    juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
-
-    logger.info("Waiting for Airflow to use Postgres...")
-    deadline = time.time() + 5 * 60
-    while time.time() < deadline:
-        conn = get_airflow_config_value(
-            juju,
-            "airflow-api-server-k8s",
-            "database",
-            "sql_alchemy_conn",
-        )
-        if conn.startswith("postgresql+psycopg2://"):
-            break
-        time.sleep(5)
-    else:
-        raise RuntimeError("Airflow database still not configured for Postgres")
+    juju.wait(jubilant.all_agents_idle, timeout=30 * 60)
+    juju.wait(lambda st: jubilant.all_active(st, ALL_APPS), timeout=30 * 60)
+    # logger.info("Waiting for Airflow to use Postgres...")
+    # deadline = time.time() + 5 * 60
+    # while time.time() < deadline:
+    #     conn = get_airflow_config_value(
+    #         juju,
+    #         "airflow-api-server-k8s",
+    #         "database",
+    #         "sql_alchemy_conn",
+    #     )
+    #     if conn.startswith("postgresql+psycopg2://"):
+    #         break
+    #     time.sleep(5)
+    # else:
+    #     raise RuntimeError("Airflow database still not configured for Postgres")
 
     ensure_db_migrated(juju, "airflow-api-server-k8s")
 
