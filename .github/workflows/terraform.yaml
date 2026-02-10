@@ -1,0 +1,22 @@
+name: Terraform checks
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+on:
+  pull_request:
+  workflow_call:
+
+jobs:
+  pull-request-terraform-checks:
+    name: PR Terraform checks
+    strategy:
+      matrix:
+        module-directory:
+          - charms/api-server/terraform
+          - charms/dag-processor/terraform
+          - charms/scheduler/terraform
+          - charms/triggerer/terraform
+    uses: canonical/workflows-team/.github/workflows/terraform.yaml@main
+    with:
+      module-directory: ${{ matrix.module-directory }}
