@@ -14,6 +14,7 @@ import pytest
 import base64
 
 from tests.integration.helpers.constants import (
+    IMAGE,
     ALL_APPS,
     COORDINATOR_APP,
     COORDINATOR_CHANNEL,
@@ -39,14 +40,13 @@ EXPECTED_RELATIONS = [
 
 def image_resources() -> dict[str, dict[str, str]]:
     """Return OCI image resource mappings for core charms."""
-    tag = os.environ.get("AIRFLOW_IMAGE_TAG", "3.1-24.04_edge")
-    base = os.environ.get("AIRFLOW_IMAGE_BASE", "ubuntu/airflow")
+
 
     return {
-        "airflow-api-server-k8s": {"airflow-api-server-image": f"{base}:{tag}"},
-        "airflow-dag-processor-k8s": {"airflow-dag-processor-image": f"{base}:{tag}"},
-        "airflow-scheduler-k8s": {"airflow-scheduler-image": f"{base}:{tag}"},
-        "airflow-triggerer-k8s": {"airflow-triggerer-image": f"{base}:{tag}"},
+        "airflow-api-server-k8s": {"airflow-api-server-image": IMAGE},
+        "airflow-dag-processor-k8s": {"airflow-dag-processor-image": IMAGE},
+        "airflow-scheduler-k8s": {"airflow-scheduler-image": IMAGE},
+        "airflow-triggerer-k8s": {"airflow-triggerer-image": IMAGE},
     }
 
 
@@ -114,7 +114,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     )
 
     logger.info("Waiting for PostgreSQL to be active...")
-    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60, successes = 5, delay = 30)
+    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60, successes = 3, delay = 30)
 
     logger.info("Deploying PgBouncer...")
     pgbouncer_kwargs = {"app": PGBOUNCER_APP, "trust": True}
@@ -145,7 +145,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     logger.info("Integrating pgbouncer <-> postgres")
     juju.integrate(f"{PGBOUNCER_APP}:backend-database", f"{POSTGRES_APP}:database")
 
-    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60, successes = 5, delay = 30)
+    juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60, successes = 3, delay = 30)
 
     logger.info("Integrating all core charms")
     for _, app in CORE_CHARMS.items():

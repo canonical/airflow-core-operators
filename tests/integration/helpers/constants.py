@@ -29,6 +29,7 @@ def _get_container_name(charm_dir: str) -> str:
         return list(containers.keys())[0]
     return None  # fallback
 
+IMAGE = os.environ.get("AIRFLOW_IMAGE", "ubuntu/airflow:3.1-24.04_edge")
 
 CORE_CHARMS = {
     "api-server": "airflow-api-server-k8s",

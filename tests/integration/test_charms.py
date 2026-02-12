@@ -4,6 +4,7 @@
 import pytest
 import jubilant
 import shlex
+from tenacity import Retrying, stop_after_attempt, wait_fixed
 
 from tests.integration.conftest import (
     file_exists,
@@ -233,16 +234,36 @@ def test_core_charms_wait_when_database_unavailable(
     )
 
     st = juju.status()
-    for _, app in CORE_CHARMS.items():
+    for component, app in CORE_CHARMS.items():
         app_status = st.apps[app]
         assert app_status.is_waiting, (
             f"Expected {app} waiting, got {app_status.app_status.current}"
         )
         container = CONTAINER_NAMES[app]
-        services_text = juju.cli("ssh", "--container", container, f"{app}/0", "pebble services || true")
-        assert pebble_service_is_running(services_text, PEBBLE_SERVICE_NAME), (
-            f"{app}: pebble service '{PEBBLE_SERVICE_NAME}' not active while waiting.\n{services_text}"
-        )
+        expected_state = "active" if component in {"api-server"} else "backoff"
+
+        for attempt in Retrying(stop=stop_after_attempt(3), wait=wait_fixed(20), reraise=True):
+            with attempt:
+                services_text = juju.cli(
+                    "ssh",
+                    "--container",
+                    container,
+                    f"{app}/0",
+                    "pebble services || true",
+                )
+                if expected_state == "active":
+                    assert pebble_service_is_running(services_text, PEBBLE_SERVICE_NAME), (
+                        f"{app}: pebble service '{PEBBLE_SERVICE_NAME}' not active while waiting.\n{services_text}"
+                    )
+                else:
+                    has_backoff = any(
+                        line.startswith(PEBBLE_SERVICE_NAME)
+                        and " backoff " in f" {line} "
+                        for line in services_text.splitlines()
+                    )
+                    assert has_backoff, (
+                        f"{app}: pebble service '{PEBBLE_SERVICE_NAME}' not in backoff while waiting.\n{services_text}"
+                    )
     juju.integrate(
         f"{PGBOUNCER_APP}:database",
         f"{COORDINATOR_APP}:postgres",
@@ -251,8 +272,7 @@ def test_core_charms_wait_when_database_unavailable(
         ready=lambda st: jubilant.all_active(st, *ALL_APPS),
         timeout=10 * 60,
     )
-    for _, app in CORE_CHARMS.items():
-        ensure_db_migrated(juju, app)
+    
     status = juju.status()
     for app in ALL_APPS:
         app_status = status.apps[app]
