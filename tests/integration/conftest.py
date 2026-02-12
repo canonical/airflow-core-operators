@@ -134,7 +134,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
 
     logger.info("Deploying core charms...")
     resources_map = image_resources()
-    for _, app in CORE_CHARMS:
+    for _, app in CORE_CHARMS.items():
         charm_path = str(core_charms[app])
         resources = resources_map.get(app, {})
         juju.deploy(charm_path, app=app, resources=resources)
@@ -148,7 +148,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     juju.wait(lambda st: jubilant.all_active(st, POSTGRES_APP), timeout=30 * 60, successes = 5, delay = 30)
 
     logger.info("Integrating all core charms")
-    for _, app in CORE_CHARMS:
+    for _, app in CORE_CHARMS.items():
         juju.integrate(f"{COORDINATOR_APP}:{COORD_REL}", f"{app}:{COORD_REL}")
 
     logger.info("Waiting for all core charm relations to be ready...")
