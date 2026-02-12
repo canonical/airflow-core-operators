@@ -72,7 +72,7 @@ def test_relation_databag_contains_core_metadata(
 ):
     """Each core charm should publish component metadata to the relation databag."""
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
-    for expected_component, app in CORE_CHARMS:
+    for expected_component, app in CORE_CHARMS.items():
         matching = find_component_metadata(
             juju,
             f"{app}/0",
