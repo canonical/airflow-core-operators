@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 EXPECTED_RELATIONS = [
     (COORDINATOR_APP, "postgres"),
-    *[(app, COORD_REL) for _, app in CORE_CHARMS],
+    *[(app, COORD_REL) for _, app in CORE_CHARMS.items()],
 ]
 
 def image_resources() -> dict[str, dict[str, str]]:
@@ -92,7 +92,7 @@ def coordinator_charm():
 def core_charms():
     """Return paths to already-packed core charms."""
     charm_paths = {}
-    for dir_name, app in CORE_CHARMS:
+    for dir_name, app in CORE_CHARMS.items():
         charm_dir_path = REPO_ROOT / "charms" / dir_name
         charm_files = list(charm_dir_path.glob("*.charm"))
         if not charm_files:
