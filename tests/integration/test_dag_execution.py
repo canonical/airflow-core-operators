@@ -4,19 +4,20 @@ import time
 import pytest
 import jubilant
 import shlex
-
-from tests.integration.conftest import (
-    push_text_file,
-)
 from tests.integration.helpers.airflow_helpers import (
-    functional_test_dag,
     json_from_airflow,
 )
+from pathlib import Path
 from tests.integration.helpers.constants import (
     CONTAINER_NAMES,
     CORE_APPS,
     DAGS_FILE,
-    get_core_app,
+    FUNCTIONAL_DAG_TEMPLATE,
+    FUNCTIONAL_DAG_ID,
+    CORE_APP_BY_COMPONENT,
+)
+from tests.integration.conftest import (
+    push_text_file,
 )
 
 
@@ -28,10 +29,8 @@ def test_dag_discovery_and_execution(
     """Injected DAG should be discovered and complete successfully."""
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
-    dag_id = "test_functional_dag"
-    dag_content = functional_test_dag(dag_id)
-
-    print("Pushing DAG content:")
+    dag_id = FUNCTIONAL_DAG_ID
+    dag_content = Path(FUNCTIONAL_DAG_TEMPLATE).read_text(encoding="utf-8")
     for app in CORE_APPS:
         unit = f"{app}/0"
         container = CONTAINER_NAMES[app]
@@ -42,7 +41,9 @@ def test_dag_discovery_and_execution(
             DAGS_FILE,
             dag_content,
         )
-    print("DAG pushed.")
+    
+        print("DAG pushed.")
+        juju.cli("ssh","--container", container, unit, f"ls -l {DAGS_FILE}")
 
     for app in CORE_APPS:
         unit = f"{app}/0"
@@ -59,16 +60,15 @@ def test_dag_discovery_and_execution(
             "--container",
             container,
             unit,
-            "bash -lc " + shlex.quote(f"airflow dags unpause {dag_id}"),
+            "bash -lc " + shlex.quote("airflow dags unpause " + dag_id),
         )
-    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
     print("Verify DAG discovery and execution")
     discovered = False
     for _ in range(36):
-        scheduler_unit = f"{get_core_app('scheduler')}/0"
-        scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+        scheduler_unit = f"{CORE_APP_BY_COMPONENT['scheduler']}/0"
+        scheduler_container = CONTAINER_NAMES[CORE_APP_BY_COMPONENT["scheduler"]]
         out = juju.cli(
             "ssh",
             "--container",
@@ -77,22 +77,26 @@ def test_dag_discovery_and_execution(
             "bash -lc "
             + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
         )
+        print(f"----------------- DAG list output: ------------------------ \n {out}")
         try:
             dags = json_from_airflow(out)
+            print(f"Parsed DAGs: {dags}")
+            juju.cli("ssh","--container" , scheduler_container, scheduler_unit, "airflow dags list-import-errors")
             if any(d.get("dag_id") == dag_id for d in dags if isinstance(d, dict)):
                 print("DAG discovered in list.")
                 discovered = True
                 break
         except Exception:
             print("Error parsing DAG list output.")
+            juju.cli("ssh","--container" , scheduler_container, scheduler_unit, "airflow dags list-import-errors")
             pass
         time.sleep(10)
 
     assert discovered, "DAG was not discovered (DAG Processor failed to sync DAG to DB)"
 
     run_id = f"it-{int(time.time())}"
-    scheduler_unit = f"{get_core_app('scheduler')}/0"
-    scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+    scheduler_unit = f"{CORE_APP_BY_COMPONENT['scheduler']}/0"
+    scheduler_container = CONTAINER_NAMES[CORE_APP_BY_COMPONENT["scheduler"]]
     juju.cli(
         "ssh",
         "--container",
@@ -103,8 +107,8 @@ def test_dag_discovery_and_execution(
 
     queued_or_running = False
     for _ in range(18):
-        scheduler_unit = f"{get_core_app('scheduler')}/0"
-        scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+        scheduler_unit = f"{CORE_APP_BY_COMPONENT['scheduler']}/0"
+        scheduler_container = CONTAINER_NAMES[CORE_APP_BY_COMPONENT["scheduler"]]
         out = juju.cli(
             "ssh",
             "--container",

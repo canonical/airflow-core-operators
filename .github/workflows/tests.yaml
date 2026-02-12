@@ -115,19 +115,16 @@ jobs:
           sudo rm -rf /run/containerd || true
 
           sudo snap install concierge --classic
-          sudo snap install just --classic
 
-          sudo -E concierge prepare -p k8s --extra-snaps=astral-uv
+          sudo -E concierge prepare -p k8s --extra-snaps=astral-uv,just
 
           mkdir -p ~/.kube
           sudo k8s kubectl config view --raw > ~/.kube/config
 
           uv tool install tox
-          sudo snap install just --classic
       
       - name: Run integration test file
         run: just integration ${{ matrix.test_file }}
 
-      - name: Get system state (if failure)
-        if: failure()
+      - name: Get system state
         run: just get-system-state

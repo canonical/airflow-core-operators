@@ -1,11 +1,9 @@
 """Pytest fixtures for integration tests."""
 
-from __future__ import annotations
-
-import base64
+# from __future__ import annotations
+from pathlib import Path
 import logging
 import os
-import pathlib
 import shlex
 import sys
 import time
@@ -13,6 +11,7 @@ import re
 
 import jubilant
 import pytest
+import base64
 
 from tests.integration.helpers.constants import (
     ALL_APPS,
@@ -29,22 +28,14 @@ from tests.integration.helpers.constants import (
 )
 from tests.integration.helpers.airflow_helpers import (
     ensure_db_migrated,
-    get_airflow_config_value,
 )
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_APP_NAMES = ALL_APPS
 EXPECTED_RELATIONS = [
     (COORDINATOR_APP, "postgres"),
     *[(app, COORD_REL) for _, app in CORE_CHARMS],
 ]
-
-
-def charm_dir(name: str) -> pathlib.Path:
-    """Path to charm directory in repo /charms folder."""
-    return REPO_ROOT / "charms" / name
-
 
 def image_resources() -> dict[str, dict[str, str]]:
     """Return OCI image resource mappings for core charms."""
@@ -88,7 +79,7 @@ def juju(request: pytest.FixtureRequest):
 @pytest.fixture(scope="module")
 def coordinator_charm():
     """Return the coordinator charm reference."""
-    coordinator_path = pathlib.Path("../airflow-coordinator-k8s-operator")
+    coordinator_path = Path("../airflow-coordinator-k8s-operator")
     if coordinator_path.exists():
         charm_files = list(coordinator_path.glob("airflow-coordinator-k8s*.charm"))
         if charm_files:
@@ -102,7 +93,7 @@ def core_charms():
     """Return paths to already-packed core charms."""
     charm_paths = {}
     for dir_name, app in CORE_CHARMS:
-        charm_dir_path = charm_dir(dir_name)
+        charm_dir_path = REPO_ROOT / "charms" / dir_name
         charm_files = list(charm_dir_path.glob("*.charm"))
         if not charm_files:
             raise FileNotFoundError(
@@ -172,7 +163,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
 
 # @pytest.fixture(autouse=True)
 # def invariant_checker(juju: jubilant.Juju):
-#     all_apps_deployed = all(app in juju.status().apps for app in REQUIRED_APP_NAMES)
+#     all_apps_deployed = all(app in juju.status().apps for app in ALL_APPS)
 
 #     expected_relations_present = all(
 #         juju.status().apps.get(relation_info[0])
@@ -187,7 +178,7 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
 
 #     yield
 
-#     all_apps_deployed = all(app in juju.status().apps for app in REQUIRED_APP_NAMES)
+#     all_apps_deployed = all(app in juju.status().apps for app in ALL_APPS)
 
 #     expected_relations_present = all(
 #         juju.status().apps.get(relation_info[0])
@@ -201,45 +192,15 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
 
 #     assert jubilant.all_active(juju.status())
 
-
-def unit_name(app: str, n: int = 0) -> str:
-    """Return unit name for app."""
-    return f"{app}/{n}"
-
-
-def workload_container_for_app(app: str) -> str:
-    """Get container name for app."""
-    return app.replace("-k8s", "")
-
-
-def ssh(juju: jubilant.Juju, unit: str, container: str, cmd: str) -> str:
-    """Run command in unit container via SSH."""
-    return juju.cli("ssh", "--container", container, unit, cmd)
-
-
-def ssh_unit(juju: jubilant.Juju, unit: str, cmd: str) -> str:
-    """Run command in unit without container specification."""
-    return juju.cli("ssh", unit, cmd)
-
-
 def file_exists(juju: jubilant.Juju, unit: str, container: str, path: str) -> bool:
     """Check if file exists in container."""
-    output = ssh(
-        juju, unit, container, f"test -f {shlex.quote(path)} && echo OK || echo MISSING"
-    )
+    output = juju.cli("ssh", "--container", container, unit, f"test -f {shlex.quote(path)} && echo OK || echo MISSING")
     return "OK" in output
-
-
-def pebble_services_text(juju: jubilant.Juju, unit: str, container: str) -> str:
-    """Get pebble services output."""
-    return ssh(juju, unit, container, "pebble services || true")
-
 
 def pebble_service_is_running(services_text: str, service: str) -> bool:
     """Return True if a Pebble service is active in the services output."""
     pattern = rf"^{re.escape(service)}\s+enabled\s+active\s+"
     return re.search(pattern, services_text, flags=re.MULTILINE) is not None
-
 
 def push_text_file(
     juju: jubilant.Juju,
@@ -259,22 +220,4 @@ def push_text_file(
     cmd = "bash -lc " + shlex.quote(
         f"mkdir -p {parent_q} && echo {payload_q} | base64 -d > {dst_q}"
     )
-    ssh(juju, unit, container, cmd)
-
-
-def remove_relation_if_exists(
-    juju: jubilant.Juju, endpoint_a: str, endpoint_b: str
-) -> None:
-    """Remove a relation if it exists, ignoring missing relations."""
-    try:
-        juju.cli("remove-relation", endpoint_a, endpoint_b)
-    except Exception:
-        pass
-
-
-def integrate_if_missing(juju: jubilant.Juju, endpoint_a: str, endpoint_b: str) -> None:
-    """Integrate two endpoints if they are not already related."""
-    try:
-        juju.integrate(endpoint_a, endpoint_b)
-    except Exception:
-        pass
+    juju.cli("ssh", "--container", container, unit, cmd)

@@ -1,7 +1,5 @@
 """Integration tests for configuration and relation behavior."""
 
-from __future__ import annotations
-
 import shlex
 import time
 
@@ -12,11 +10,9 @@ from tests.integration.conftest import (
     file_exists,
 )
 from tests.integration.helpers.airflow_helpers import (
-    airflow_dags_reserialize,  # Use helper to reserialize after config changes.
     json_from_airflow,
     read_airflow_config,
-    restart_airflow_service,  # Use helper to restart airflow via pebble.
-    set_coordinator_load_examples,  # Use helper to update coordinator template.
+    set_coordinator_load_examples,
 )
 from tests.integration.helpers.constants import (
     AIRFLOW_CONFIG_PATH,
@@ -24,7 +20,7 @@ from tests.integration.helpers.constants import (
     COORDINATOR_APP,
     COORD_REL,
     CORE_CHARMS,
-    get_core_app,
+    CORE_APP_BY_COMPONENT,
 )
 from tests.integration.helpers.juju_helpers import find_component_metadata
 
@@ -35,10 +31,8 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
     deployed_stack,
 ):
     """Airflow config should be removed on relation break and restored on rejoin."""
-    target_app = get_core_app("scheduler")
-    # Use explicit unit strings to avoid helper indirection.
+    target_app = CORE_APP_BY_COMPONENT["scheduler"]
     target_unit = f"{target_app}/0"
-    # Use container names from charmcraft.yaml to avoid assumptions.
     target_container = CONTAINER_NAMES[target_app]
 
     cfg = read_airflow_config(juju, target_unit, target_container)
@@ -99,8 +93,8 @@ def test_airflow_cli_stress_dags_list(
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
     for _ in range(6):
-        scheduler_unit = f"{get_core_app('scheduler')}/0"
-        scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+        scheduler_unit = f"{CORE_APP_BY_COMPONENT['scheduler']}/0"
+        scheduler_container = CONTAINER_NAMES[CORE_APP_BY_COMPONENT["scheduler"]]
         out = juju.cli(
             "ssh",
             "--container",
@@ -119,8 +113,8 @@ def test_database_connectivity_from_scheduler(
     juju: jubilant.Juju,
 ):
     """Exec into the scheduler container and confirm DB connectivity."""
-    scheduler_unit = f"{get_core_app('scheduler')}/0"
-    scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+    scheduler_unit = f"{CORE_APP_BY_COMPONENT['scheduler']}/0"
+    scheduler_container = CONTAINER_NAMES[CORE_APP_BY_COMPONENT["scheduler"]]
 
     check_cmd = "airflow db check || echo 'DB check failed'"
     out = juju.cli(
@@ -143,20 +137,32 @@ def test_config_change_propagates_and_dags_reserialize(
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
 
-    for _, app in CORE_CHARMS:
-        restart_airflow_service(juju, app)
+    for _, app in CORE_CHARMS.items():
+        juju.cli(
+            "ssh",
+            "--container",
+            app.replace("-k8s", ""), 
+            f"{app}/0",
+            "pebble restart airflow",
+        )
 
-    for _, app in CORE_CHARMS:
-        airflow_dags_reserialize(juju, app)
+    for _, app in CORE_CHARMS.items():
+        juju.cli(
+            "ssh",
+            "--container",
+            app.replace("-k8s", ""), 
+            f"{app}/0",
+            "bash -lc " + shlex.quote("airflow dags reserialize"),
+        )
 
-    for _, app in CORE_CHARMS:
+    for _, app in CORE_CHARMS.items():
         cfg = read_airflow_config(juju, f"{app}/0", CONTAINER_NAMES[app])
         assert cfg.get("core", "load_examples") == "True", (
             f"Expected load_examples=True in {app} config"
         )
 
-    scheduler_unit = f"{get_core_app('scheduler')}/0"
-    scheduler_container = CONTAINER_NAMES[get_core_app("scheduler")]
+    scheduler_unit = f"{CORE_APP_BY_COMPONENT['scheduler']}/0"
+    scheduler_container = CONTAINER_NAMES[CORE_APP_BY_COMPONENT["scheduler"]]
     out = juju.cli(
         "ssh",
         "--container",

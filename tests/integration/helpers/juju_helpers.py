@@ -1,7 +1,5 @@
 """Juju CLI and relation helpers for integration tests."""
 
-from __future__ import annotations
-
 from typing import Any
 
 import json

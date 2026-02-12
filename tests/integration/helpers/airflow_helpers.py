@@ -1,15 +1,24 @@
 """Helpers for Airflow CLI, config parsing, and test DAG templates."""
 
-from __future__ import annotations
-
 import configparser
 import json
 import shlex
-import textwrap
-import time
-
 import jubilant
 from tests.integration.helpers.constants import AIRFLOW_CONFIG_PATH, ANSI_RE, PEBBLE_SERVICE_NAME
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_fixed,
+    retry_if_exception_type,
+)
+import logging
+import textwrap
+
+logger = logging.getLogger(__name__)
+
+
+class ServiceNotReadyError(RuntimeError):
+    """Raised when the Pebble service is not ready yet."""
 
 def clean_ansi(text: str) -> str:
     """Strip ANSI escape sequences from CLI output."""
@@ -29,9 +38,8 @@ def read_airflow_config(
     path: str = AIRFLOW_CONFIG_PATH,
 ) -> configparser.ConfigParser:
     """Read the rendered airflow.cfg from the workload container."""
-    from tests.integration.conftest import ssh
 
-    output = ssh(juju, unit, container, "bash -lc " + shlex.quote(f"cat {path}"))
+    output = juju.cli("ssh", "--container", container, unit, "bash -lc " + shlex.quote(f"cat {path}"))
     parser = configparser.ConfigParser()
     parser.read_string(output)
     return parser
@@ -44,61 +52,52 @@ def get_airflow_config_value(
     key: str,
 ) -> str:
     """Return a config value from the Airflow CLI."""
-    from tests.integration.conftest import ssh, unit_name, workload_container_for_app
 
     cmd = f"airflow config get-value {section} {key}"
-    out = ssh(
-        juju,
-        unit_name(app),
-        workload_container_for_app(app),
-        "bash -lc " + shlex.quote(cmd),
-    )
+    out = juju.cli("ssh", "--container", app.replace("-k8s", ""), f"{app}/0", "bash -lc " + shlex.quote(cmd))
     return clean_ansi(out).strip()
 
-
+@retry(
+    stop=stop_after_attempt(30),
+    wait=wait_fixed(5),
+    reraise=True,
+    retry=retry_if_exception_type(ServiceNotReadyError),
+)
 def ensure_db_migrated(juju: jubilant.Juju, app: str) -> None:
     """Ensure the Airflow database migrations are fully applied."""
     from tests.integration.conftest import (
         pebble_service_is_running,
-        pebble_services_text,
-        ssh,
-        unit_name,
-        workload_container_for_app,
     )
 
-    unit = unit_name(app)
-    container = workload_container_for_app(app)
+    unit = f"{app}/0"
+    container = app.replace("-k8s", "")
+    
+    try:
+        services_text = juju.cli(
+            "ssh",
+            "--container",
+            container,
+            unit,
+            "pebble services || true",
+        )
+    except Exception as exc:
+        logger.info("Pebble service not ready yet, retrying...")
+        raise ServiceNotReadyError(
+            f"Failed checking Pebble services for {app}"
+        ) from exc
 
-    deadline = time.time() + 5 * 60
-    last_error: Exception | None = None
-    while time.time() < deadline:
-        try:
-            services_text = pebble_services_text(juju, unit, container)
-            if pebble_service_is_running(services_text, PEBBLE_SERVICE_NAME):
-                break
-        except Exception as exc:
-            last_error = exc
-        time.sleep(5)
-    else:
-        if last_error is not None:
-            raise last_error
-        raise RuntimeError(
+    if not pebble_service_is_running(services_text, PEBBLE_SERVICE_NAME):
+        logger.info("Pebble service not ready yet, retrying...")
+        raise ServiceNotReadyError(
             f"Timed out waiting for '{PEBBLE_SERVICE_NAME}' service in {app}"
         )
 
     cmd = "airflow db migrate"
-    ssh(
-        juju,
-        unit,
-        container,
-        "bash -lc " + shlex.quote(cmd),
-    )
-
+    juju.cli("ssh","--container",container,unit,"bash -lc " + shlex.quote(cmd))
 
 def set_coordinator_load_examples(
     juju: jubilant.Juju, coordinator_unit: str, load_examples: bool
 ) -> None:
-    from tests.integration.conftest import ssh_unit
 
     unit_path = coordinator_unit.replace("/", "-")
     template_path = (
@@ -106,30 +105,18 @@ def set_coordinator_load_examples(
     )
     value = "True" if load_examples else "False"
     cmd = f"sed -i 's/^load_examples = .*/load_examples = {value}/' {template_path}"
-    ssh_unit(juju, coordinator_unit, "bash -lc " + shlex.quote(cmd))
+    juju.cli("ssh", coordinator_unit, "bash -lc " + shlex.quote(cmd))
 
 
 def restart_airflow_service(juju: jubilant.Juju, app: str) -> None:
     """Restart the airflow service in the workload container via Pebble."""
-    from tests.integration.conftest import ssh, unit_name, workload_container_for_app
 
-    ssh(
-        juju,
-        unit_name(app),
-        workload_container_for_app(app),
+    juju.cli(
+        "ssh",
+        "--container",
+        app.replace("-k8s", ""), 
+        f"{app}/0",
         "pebble restart airflow",
-    )
-
-
-def airflow_dags_reserialize(juju: jubilant.Juju, app: str) -> None:
-    """Reserialize DAGs to ensure new config is applied to parsing."""
-    from tests.integration.conftest import ssh, unit_name, workload_container_for_app
-
-    ssh(
-        juju,
-        unit_name(app),
-        workload_container_for_app(app),
-        "bash -lc " + shlex.quote("airflow dags reserialize"),
     )
 
 
