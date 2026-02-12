@@ -90,6 +90,7 @@ def test_relation_databag_contains_core_metadata(
             f"Missing component metadata for {expected_component}"
         )
 
+
 @pytest.mark.abort_on_fail
 def test_database_connectivity_from_scheduler(
     juju: jubilant.Juju,
@@ -108,6 +109,7 @@ def test_database_connectivity_from_scheduler(
     )
     assert "DB check failed" not in out, f"Failed to connect to the DB: {out}"
 
+
 @pytest.mark.abort_on_fail
 def test_config_change_propagates_and_dags_reserialize(
     juju: jubilant.Juju,
@@ -117,12 +119,12 @@ def test_config_change_propagates_and_dags_reserialize(
     set_coordinator_load_examples(juju, coordinator_unit, True)
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
-
+    # TODO: Update once the issue https://github.com/canonical/airflow-core-operators/issues/19 is resolved
     for _, app in CORE_CHARMS.items():
         juju.cli(
             "ssh",
             "--container",
-            app.replace("-k8s", ""), 
+            app.replace("-k8s", ""),
             f"{app}/0",
             "pebble restart airflow",
         )
@@ -131,7 +133,7 @@ def test_config_change_propagates_and_dags_reserialize(
         juju.cli(
             "ssh",
             "--container",
-            app.replace("-k8s", ""), 
+            app.replace("-k8s", ""),
             f"{app}/0",
             "bash -lc " + shlex.quote("airflow dags reserialize"),
         )
@@ -149,7 +151,8 @@ def test_config_change_propagates_and_dags_reserialize(
         "--container",
         scheduler_container,
         scheduler_unit,
-        "bash -lc " + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
+        "bash -lc "
+        + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
     )
     assert isinstance(json_from_airflow(out), list)
 
@@ -204,10 +207,13 @@ def test_scheduler_scale_and_resilience(
                 "--container",
                 scheduler_container,
                 unit_name,
-                "bash -lc " + shlex.quote(f"airflow dags trigger {dag_id} --run-id {run_id}"),
+                "bash -lc "
+                + shlex.quote(f"airflow dags trigger {dag_id} --run-id {run_id}"),
             )
 
-            for attempt in Retrying(stop=stop_after_attempt(6), wait=wait_fixed(10), reraise=True):
+            for attempt in Retrying(
+                stop=stop_after_attempt(6), wait=wait_fixed(10), reraise=True
+            ):
                 with attempt:
                     out = juju.cli(
                         "ssh",
@@ -224,7 +230,8 @@ def test_scheduler_scale_and_resilience(
                     if not any(
                         run.get("run_id") == run_id
                         and run.get("state") in {"queued", "running"}
-                        for run in runs if isinstance(runs, list)
+                        for run in runs
+                        if isinstance(runs, list)
                     ):
                         raise AssertionError(
                             f"DAG run {run_id} did not reach queued/running"

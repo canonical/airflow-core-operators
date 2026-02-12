@@ -27,7 +27,8 @@ def _get_container_name(charm_dir: str) -> str:
     containers = config.get("containers", {})
     if containers:
         return list(containers.keys())[0]
-    return None  # fallback
+    raise ValueError(f"No containers defined in charmcraft.yaml for {charm_dir}")
+
 
 IMAGE = os.environ.get("AIRFLOW_IMAGE", "ubuntu/airflow:3.1-24.04_edge")
 

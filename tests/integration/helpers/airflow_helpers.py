@@ -5,7 +5,7 @@ import json
 import shlex
 import jubilant
 
-import tests.integration.helpers.constants as constants 
+import tests.integration.helpers.constants as constants
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 class ServiceNotReadyError(RuntimeError):
     """Raised when the Pebble service is not ready yet."""
+
 
 def clean_ansi(text: str) -> str:
     """Strip ANSI escape sequences from CLI output."""
@@ -40,7 +41,9 @@ def read_airflow_config(
 ) -> configparser.ConfigParser:
     """Read the rendered airflow.cfg from the workload container."""
 
-    output = juju.cli("ssh", "--container", container, unit, "bash -lc " + shlex.quote(f"cat {path}"))
+    output = juju.cli(
+        "ssh", "--container", container, unit, "bash -lc " + shlex.quote(f"cat {path}")
+    )
     parser = configparser.ConfigParser()
     parser.read_string(output)
     return parser
@@ -55,8 +58,15 @@ def get_airflow_config_value(
     """Return a config value from the Airflow CLI."""
 
     cmd = f"airflow config get-value {section} {key}"
-    out = juju.cli("ssh", "--container", app.replace("-k8s", ""), f"{app}/0", "bash -lc " + shlex.quote(cmd))
+    out = juju.cli(
+        "ssh",
+        "--container",
+        app.replace("-k8s", ""),
+        f"{app}/0",
+        "bash -lc " + shlex.quote(cmd),
+    )
     return clean_ansi(out).strip()
+
 
 @retry(
     stop=stop_after_attempt(30),
@@ -72,7 +82,7 @@ def ensure_db_migrated(juju: jubilant.Juju, app: str) -> None:
 
     unit = f"{app}/0"
     container = app.replace("-k8s", "")
-    
+
     try:
         services_text = juju.cli(
             "ssh",
@@ -94,12 +104,12 @@ def ensure_db_migrated(juju: jubilant.Juju, app: str) -> None:
         )
 
     cmd = "airflow db migrate"
-    juju.cli("ssh","--container",container,unit,"bash -lc " + shlex.quote(cmd))
+    juju.cli("ssh", "--container", container, unit, "bash -lc " + shlex.quote(cmd))
+
 
 def set_coordinator_load_examples(
     juju: jubilant.Juju, coordinator_unit: str, load_examples: bool
 ) -> None:
-
     unit_path = coordinator_unit.replace("/", "-")
     template_path = (
         f"/var/lib/juju/agents/unit-{unit_path}/charm/src/templates/airflow_config.j2"
@@ -115,7 +125,7 @@ def restart_airflow_service(juju: jubilant.Juju, app: str) -> None:
     juju.cli(
         "ssh",
         "--container",
-        app.replace("-k8s", ""), 
+        app.replace("-k8s", ""),
         f"{app}/0",
         "pebble restart airflow",
     )

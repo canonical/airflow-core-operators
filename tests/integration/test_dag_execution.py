@@ -22,7 +22,9 @@ def test_dag_discovery_and_execution(
 ):
     """Injected DAG should be discovered and complete successfully."""
     scheduler_unit = f"{constants.CORE_APP_BY_COMPONENT['scheduler']}/0"
-    scheduler_container = constants.CONTAINER_NAMES[constants.CORE_APP_BY_COMPONENT["scheduler"]]
+    scheduler_container = constants.CONTAINER_NAMES[
+        constants.CORE_APP_BY_COMPONENT["scheduler"]
+    ]
 
     dag_id = constants.FUNCTIONAL_DAG_ID
     dag_content = Path(constants.FUNCTIONAL_DAG_TEMPLATE).read_text(encoding="utf-8")
@@ -36,8 +38,8 @@ def test_dag_discovery_and_execution(
             constants.DAGS_FILE,
             dag_content,
         )
-    
-        juju.cli("ssh","--container", container, unit, f"ls -l {constants.DAGS_FILE}")
+
+        juju.cli("ssh", "--container", container, unit, f"ls -l {constants.DAGS_FILE}")
 
     for app in constants.CORE_APPS:
         unit = f"{app}/0"
@@ -52,7 +54,9 @@ def test_dag_discovery_and_execution(
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
 
-    for attempt in Retrying(stop=stop_after_attempt(36), wait=wait_fixed(10), reraise=True):
+    for attempt in Retrying(
+        stop=stop_after_attempt(36), wait=wait_fixed(10), reraise=True
+    ):
         with attempt:
             out = juju.cli(
                 "ssh",
@@ -62,7 +66,7 @@ def test_dag_discovery_and_execution(
                 "bash -lc "
                 + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
             )
-            
+
             dags = json_from_airflow(out)
             if not any(d.get("dag_id") == dag_id for d in dags if isinstance(d, dict)):
                 raise AssertionError("DAG not discovered yet")
@@ -77,7 +81,9 @@ def test_dag_discovery_and_execution(
     )
 
     queued_or_running = False
-    for attempt in Retrying(stop=stop_after_attempt(36), wait=wait_fixed(10), reraise=True):
+    for attempt in Retrying(
+        stop=stop_after_attempt(36), wait=wait_fixed(10), reraise=True
+    ):
         with attempt:
             out = juju.cli(
                 "ssh",

@@ -24,6 +24,7 @@ EXPECTED_RELATIONS = [
     *[(app, constants.COORD_REL) for _, app in constants.CORE_CHARMS.items()],
 ]
 
+
 def image_resources() -> dict[str, dict[str, str]]:
     """Return OCI image resource mappings for core charms."""
 
@@ -48,7 +49,8 @@ def juju(request: pytest.FixtureRequest):
             time.sleep(0.5)
             log = juju.debug_log(limit=1000)
             print(log, end="", file=sys.stderr)
-    
+
+
 @pytest.fixture(scope="module")
 def coordinator_charm():
     """Return the coordinator charm reference."""
@@ -75,6 +77,7 @@ def core_charms():
         charm_paths[app] = max(charm_files, key=lambda p: p.stat().st_mtime)
     return charm_paths
 
+
 @pytest.fixture(scope="module")
 def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dict):
     """Deploy the full Airflow stack with PgBouncer in front of PostgreSQL."""
@@ -87,7 +90,12 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
     )
 
     logger.info("Waiting for PostgreSQL to be active...")
-    juju.wait(lambda st: jubilant.all_active(st, constants.POSTGRES_APP), timeout=30 * 60, successes = 3, delay = 30)
+    juju.wait(
+        lambda st: jubilant.all_active(st, constants.POSTGRES_APP),
+        timeout=30 * 60,
+        successes=3,
+        delay=30,
+    )
 
     logger.info("Deploying PgBouncer...")
     pgbouncer_kwargs = {"app": constants.PGBOUNCER_APP, "trust": True}
@@ -113,16 +121,29 @@ def deployed_stack(juju: jubilant.Juju, coordinator_charm: str, core_charms: dic
         juju.deploy(charm_path, app=app, resources=resources)
 
     logger.info("Integrating coordinator <-> pgbouncer")
-    juju.integrate(f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database")
+    juju.integrate(
+        f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database"
+    )
 
     logger.info("Integrating pgbouncer <-> postgres")
-    juju.integrate(f"{constants.PGBOUNCER_APP}:backend-database", f"{constants.POSTGRES_APP}:database")
+    juju.integrate(
+        f"{constants.PGBOUNCER_APP}:backend-database",
+        f"{constants.POSTGRES_APP}:database",
+    )
 
-    juju.wait(lambda st: jubilant.all_active(st, constants.POSTGRES_APP), timeout=30 * 60, successes = 3, delay = 30)
+    juju.wait(
+        lambda st: jubilant.all_active(st, constants.POSTGRES_APP),
+        timeout=30 * 60,
+        successes=3,
+        delay=30,
+    )
 
     logger.info("Integrating all core charms")
     for _, app in constants.CORE_CHARMS.items():
-        juju.integrate(f"{constants.COORDINATOR_APP}:{constants.COORD_REL}", f"{app}:{constants.COORD_REL}")
+        juju.integrate(
+            f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
+            f"{app}:{constants.COORD_REL}",
+        )
 
     logger.info("Waiting for all core charm relations to be ready...")
     juju.wait(jubilant.all_agents_idle, timeout=30 * 60)
@@ -140,12 +161,16 @@ def invariant_checker(juju: jubilant.Juju):
 
     expected_relations_present = all(
         juju.status().apps.get(relation_info[0])
-        and len(juju.status().apps[relation_info[0]].relations.get(relation_info[1], []))
+        and len(
+            juju.status().apps[relation_info[0]].relations.get(relation_info[1], [])
+        )
         for relation_info in EXPECTED_RELATIONS
     )
 
     if not all_apps_deployed or not expected_relations_present:
-        logger.info("Skipping invariant pre-check as model (apps + ready) not present yet")
+        logger.info(
+            "Skipping invariant pre-check as model (apps + ready) not present yet"
+        )
     else:
         assert jubilant.all_active(juju.status())
 
@@ -155,25 +180,38 @@ def invariant_checker(juju: jubilant.Juju):
 
     expected_relations_present = all(
         juju.status().apps.get(relation_info[0])
-        and len(juju.status().apps[relation_info[0]].relations.get(relation_info[1], []))
+        and len(
+            juju.status().apps[relation_info[0]].relations.get(relation_info[1], [])
+        )
         for relation_info in EXPECTED_RELATIONS
     )
 
     if not all_apps_deployed or not expected_relations_present:
-        logger.info("Skipping invariant post-check as model (apps + ready) not present yet")
+        logger.info(
+            "Skipping invariant post-check as model (apps + ready) not present yet"
+        )
         return
 
     assert jubilant.all_active(juju.status())
 
+
 def file_exists(juju: jubilant.Juju, unit: str, container: str, path: str) -> bool:
     """Check if file exists in container."""
-    output = juju.cli("ssh", "--container", container, unit, f"test -f {shlex.quote(path)} && echo OK || echo MISSING")
+    output = juju.cli(
+        "ssh",
+        "--container",
+        container,
+        unit,
+        f"test -f {shlex.quote(path)} && echo OK || echo MISSING",
+    )
     return "OK" in output
+
 
 def pebble_service_is_running(services_text: str, service: str) -> bool:
     """Return True if a Pebble service is active in the services output."""
     pattern = rf"^{re.escape(service)}\s+enabled\s+active\s+"
     return re.search(pattern, services_text, flags=re.MULTILINE) is not None
+
 
 def push_text_file(
     juju: jubilant.Juju,

@@ -38,7 +38,9 @@ def test_full_stack_goes_active_and_core_services_run(
             f"{app}/0",
             "pebble services || true",
         )
-        assert pebble_service_is_running(services_text, constants.PEBBLE_SERVICE_NAME), (
+        assert pebble_service_is_running(
+            services_text, constants.PEBBLE_SERVICE_NAME
+        ), (
             f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active after recovery.\n{services_text}"
         )
 
@@ -57,7 +59,9 @@ def test_pebble_services_and_config_exist(
             f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
         )
 
-        services_text = juju.cli("ssh", "--container", container, unit, "pebble services || true")
+        services_text = juju.cli(
+            "ssh", "--container", container, unit, "pebble services || true"
+        )
         assert pebble_service_is_running(services_text, service_name), (
             f"{app}: pebble service '{service_name}' not active.\n{services_text}"
         )
@@ -100,6 +104,7 @@ def test_api_health_endpoint_if_available(
         assert '"status":"healthy"' in compact, (
             f"API health endpoint unhealthy from {label}. Output:\n{response}"
         )
+
 
 @pytest.mark.abort_on_fail
 def test_triggerer_health(
@@ -223,7 +228,7 @@ def test_core_charms_wait_when_database_unavailable(
     juju: jubilant.Juju,
 ):
     """Core charms should go waiting if Postgres is scaled down or removed."""
-    
+
     juju.cli(
         "remove-relation",
         f"{constants.PGBOUNCER_APP}:database",
@@ -233,7 +238,9 @@ def test_core_charms_wait_when_database_unavailable(
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
     juju.wait(
-        ready=lambda st: all(st.apps[app].is_waiting for _, app in constants.CORE_CHARMS.items()),
+        ready=lambda st: all(
+            st.apps[app].is_waiting for _, app in constants.CORE_CHARMS.items()
+        ),
         timeout=15 * 60,
     )
 
@@ -246,7 +253,9 @@ def test_core_charms_wait_when_database_unavailable(
         container = constants.CONTAINER_NAMES[app]
         expected_state = "active" if component in {"api-server"} else "backoff"
 
-        for attempt in Retrying(stop=stop_after_attempt(3), wait=wait_fixed(20), reraise=True):
+        for attempt in Retrying(
+            stop=stop_after_attempt(3), wait=wait_fixed(20), reraise=True
+        ):
             with attempt:
                 services_text = juju.cli(
                     "ssh",
@@ -256,7 +265,9 @@ def test_core_charms_wait_when_database_unavailable(
                     "pebble services || true",
                 )
                 if expected_state == "active":
-                    assert pebble_service_is_running(services_text, constants.PEBBLE_SERVICE_NAME), (
+                    assert pebble_service_is_running(
+                        services_text, constants.PEBBLE_SERVICE_NAME
+                    ), (
                         f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active while waiting.\n{services_text}"
                     )
                 else:
@@ -276,7 +287,7 @@ def test_core_charms_wait_when_database_unavailable(
         ready=lambda st: jubilant.all_active(st, *constants.ALL_APPS),
         timeout=10 * 60,
     )
-    
+
     status = juju.status()
     for app in constants.ALL_APPS:
         app_status = status.apps[app]

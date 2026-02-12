@@ -34,13 +34,12 @@ clean: clean-charms
 	juju models --format json 2>/dev/null | jq -r '.models[] | select(.name | startswith("jubilant-")) | .name' | xargs -r -I {} juju destroy-model --force --destroy-storage --no-prompt {}
 
 lint:
-	uv sync --group lint
-	uv run ruff check tests/integration
-	uv run codespell
+	uv sync --frozen --group lint
+	uv run tox -e lint
 
 format:
-	uv sync --group format
-	uv run ruff format .
+	uv sync --frozen --group format
+	uv run tox -e format
 
 get-system-state:
 	#!/usr/bin/bash
