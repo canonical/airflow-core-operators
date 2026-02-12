@@ -210,14 +210,16 @@ def push_text_file(
     content: str,
 ) -> None:
     """Push text content to a file inside a unit container."""
-    parent_dir = os.path.dirname(dst_path) or "/"
-    parent_q = shlex.quote(parent_dir)
-    dst_q = shlex.quote(dst_path)
+    destination_path = Path(dst_path)
+    destination_directory = destination_path.parent
+    destination_directory_arg = shlex.quote(str(destination_directory))
+    destination_path_arg = shlex.quote(dst_path)
 
-    payload_b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
-    payload_q = shlex.quote(payload_b64)
+    encoded_payload = base64.b64encode(content.encode("utf-8")).decode("ascii")
+    encoded_payload_arg = shlex.quote(encoded_payload)
 
-    cmd = "bash -lc " + shlex.quote(
-        f"mkdir -p {parent_q} && echo {payload_q} | base64 -d > {dst_q}"
+    command = "bash -lc " + shlex.quote(
+        f"mkdir -p {destination_directory_arg} "
+        f"&& echo {encoded_payload_arg} | base64 -d > {destination_path_arg}"
     )
-    juju.cli("ssh", "--container", container, unit, cmd)
+    juju.cli("ssh", "--container", container, unit, command)

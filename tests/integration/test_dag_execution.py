@@ -4,6 +4,7 @@ import time
 import pytest
 import jubilant
 import shlex
+from tenacity import Retrying, stop_after_attempt, wait_fixed
 from tests.integration.helpers.airflow_helpers import (
     json_from_airflow,
 )
@@ -65,8 +66,7 @@ def test_dag_discovery_and_execution(
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
     print("Verify DAG discovery and execution")
-    discovered = False
-    for _ in range(36):
+    def _dag_is_discovered() -> None:
         scheduler_unit = f"{CORE_APP_BY_COMPONENT['scheduler']}/0"
         scheduler_container = CONTAINER_NAMES[CORE_APP_BY_COMPONENT["scheduler"]]
         out = juju.cli(
@@ -78,21 +78,21 @@ def test_dag_discovery_and_execution(
             + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
         )
         print(f"----------------- DAG list output: ------------------------ \n {out}")
-        try:
-            dags = json_from_airflow(out)
-            print(f"Parsed DAGs: {dags}")
-            juju.cli("ssh","--container" , scheduler_container, scheduler_unit, "airflow dags list-import-errors")
-            if any(d.get("dag_id") == dag_id for d in dags if isinstance(d, dict)):
-                print("DAG discovered in list.")
-                discovered = True
-                break
-        except Exception:
-            print("Error parsing DAG list output.")
-            juju.cli("ssh","--container" , scheduler_container, scheduler_unit, "airflow dags list-import-errors")
-            pass
-        time.sleep(10)
+        dags = json_from_airflow(out)
+        print(f"Parsed DAGs: {dags}")
+        juju.cli(
+            "ssh",
+            "--container",
+            scheduler_container,
+            scheduler_unit,
+            "airflow dags list-import-errors",
+        )
+        if not any(d.get("dag_id") == dag_id for d in dags if isinstance(d, dict)):
+            raise AssertionError("DAG not discovered yet")
 
-    assert discovered, "DAG was not discovered (DAG Processor failed to sync DAG to DB)"
+    for attempt in Retrying(stop=stop_after_attempt(36), wait=wait_fixed(10), reraise=True):
+        with attempt:
+            _dag_is_discovered()
 
     run_id = f"it-{int(time.time())}"
     scheduler_unit = f"{CORE_APP_BY_COMPONENT['scheduler']}/0"
