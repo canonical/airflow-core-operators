@@ -4,7 +4,8 @@ import configparser
 import json
 import shlex
 import jubilant
-from tests.integration.helpers.constants import AIRFLOW_CONFIG_PATH, ANSI_RE, PEBBLE_SERVICE_NAME
+
+import tests.integration.helpers.constants as constants 
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -22,7 +23,7 @@ class ServiceNotReadyError(RuntimeError):
 
 def clean_ansi(text: str) -> str:
     """Strip ANSI escape sequences from CLI output."""
-    return ANSI_RE.sub("", text)
+    return constants.ANSI_RE.sub("", text)
 
 
 def json_from_airflow(out: str) -> list | dict:
@@ -35,7 +36,7 @@ def read_airflow_config(
     juju: jubilant.Juju,
     unit: str,
     container: str,
-    path: str = AIRFLOW_CONFIG_PATH,
+    path: str = constants.AIRFLOW_CONFIG_PATH,
 ) -> configparser.ConfigParser:
     """Read the rendered airflow.cfg from the workload container."""
 
@@ -86,10 +87,10 @@ def ensure_db_migrated(juju: jubilant.Juju, app: str) -> None:
             f"Failed checking Pebble services for {app}"
         ) from exc
 
-    if not pebble_service_is_running(services_text, PEBBLE_SERVICE_NAME):
+    if not pebble_service_is_running(services_text, constants.PEBBLE_SERVICE_NAME):
         logger.info("Pebble service not ready yet, retrying...")
         raise ServiceNotReadyError(
-            f"Timed out waiting for '{PEBBLE_SERVICE_NAME}' service in {app}"
+            f"Timed out waiting for '{constants.PEBBLE_SERVICE_NAME}' service in {app}"
         )
 
     cmd = "airflow db migrate"

@@ -61,6 +61,7 @@ AIRFLOW_CONFIG_PATH = os.environ.get("AIRFLOW_CONFIG_PATH", "/opt/airflow/airflo
 DEFAULT_DAGS_PATH = os.environ.get("DAGS_PATH", "/opt/airflow/dags")
 
 AUTH_FILE = "/opt/airflow/simple_auth_manager_passwords.json.generated"
+
 DAGS_FILE = "/dags/test_dag.py"
 
 PEBBLE_SERVICE_NAME = "airflow"
