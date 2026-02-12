@@ -29,6 +29,19 @@ def test_full_stack_goes_active_and_core_services_run(
             f"{app} should be active, but got status {app_status.app_status.current}"
         )
 
+    for _, app in constants.CORE_CHARMS.items():
+        container = constants.CONTAINER_NAMES[app]
+        services_text = juju.cli(
+            "ssh",
+            "--container",
+            container,
+            f"{app}/0",
+            "pebble services || true",
+        )
+        assert pebble_service_is_running(services_text, constants.PEBBLE_SERVICE_NAME), (
+            f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active after recovery.\n{services_text}"
+        )
+
 
 @pytest.mark.abort_on_fail
 def test_pebble_services_and_config_exist(
