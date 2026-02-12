@@ -62,6 +62,7 @@ DEFAULT_DAGS_PATH = os.environ.get("DAGS_PATH", "/opt/airflow/dags")
 
 AUTH_FILE = "/opt/airflow/simple_auth_manager_passwords.json.generated"
 
+# TODO: Update the constant once the issue https://github.com/canonical/airflow-coordinator-k8s-operator/issues/16 is resolved
 DAGS_FILE = "/dags/test_dag.py"
 
 PEBBLE_SERVICE_NAME = "airflow"

@@ -130,6 +130,7 @@ def test_airflow_config_cli_values(
     juju: jubilant.Juju,
 ):
     """Airflow CLI should return expected config values."""
+    # TODO: Update the assertions related to dags and logs folder oncer the issue https://github.com/canonical/airflow-coordinator-k8s-operator/issues/16 is resolved
     for _, app in constants.CORE_CHARMS.items():
         assert (
             get_airflow_config_value(

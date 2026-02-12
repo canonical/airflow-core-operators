@@ -30,14 +30,16 @@ from tests.integration.helpers.juju_helpers import find_component_metadata
 
 
 @pytest.mark.abort_on_fail
+@pytest.mark.parametrize("component, app", list(CORE_CHARMS.items()))
 def test_airflow_config_options_present_and_rewritten_on_relation_change(
     juju: jubilant.Juju,
     deployed_stack,
+    component: str,
+    app: str,
 ):
     """Airflow config should be removed on relation break and restored on rejoin."""
-    target_app = CORE_APP_BY_COMPONENT["scheduler"]
-    target_unit = f"{target_app}/0"
-    target_container = CONTAINER_NAMES[target_app]
+    target_unit = f"{app}/0"
+    target_container = CONTAINER_NAMES[app]
 
     cfg = read_airflow_config(juju, target_unit, target_container)
 
@@ -51,7 +53,7 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
     juju.cli(
         "remove-relation",
         f"{COORDINATOR_APP}:{COORD_REL}",
-        f"{target_app}:{COORD_REL}",
+        f"{app}:{COORD_REL}",
     )
 
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
@@ -60,7 +62,7 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
 
     juju.integrate(
         f"{COORDINATOR_APP}:{COORD_REL}",
-        f"{target_app}:{COORD_REL}",
+        f"{app}:{COORD_REL}",
     )
 
     juju.wait(jubilant.all_agents_idle, timeout=20 * 60)
