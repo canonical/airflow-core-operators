@@ -117,14 +117,13 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
             f"{app}:{constants.COORD_REL}",
         )
 
+    ensure_db_migrated(juju, "airflow-api-server-k8s")
     logger.info("Waiting for all core charm relations to be ready...")
     juju.wait(jubilant.all_agents_idle, timeout=5 * 60)
     juju.wait(
         ready=lambda st: jubilant.all_active(st, *constants.ALL_APPS),
         timeout=10 * 60,
     )
-    ensure_db_migrated(juju, "airflow-api-server-k8s")
-
 
 @pytest.fixture(autouse=True)
 def invariant_checker(juju: jubilant.Juju):

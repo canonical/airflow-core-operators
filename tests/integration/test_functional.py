@@ -1,6 +1,5 @@
 """Integration tests for configuration and relation behavior."""
 
-import random
 import shlex
 import time
 
