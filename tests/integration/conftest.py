@@ -160,6 +160,7 @@ def invariant_checker(juju: jubilant.Juju):
     else:
         assert jubilant.all_active(juju.status())
 
+
 def file_exists(juju: jubilant.Juju, unit: str, container: str, path: str) -> bool:
     """Check if file exists in container."""
     output = juju.cli(

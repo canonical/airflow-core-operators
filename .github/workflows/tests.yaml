@@ -122,7 +122,9 @@ jobs:
           sudo k8s kubectl config view --raw > ~/.kube/config
 
           uv tool install tox
-
+      - name: Run tmate
+        uses: mxschmitt/action-tmate@v3.0.4
+        
       - name: Run integration test file
         run: just integration ${{ matrix.test_file }}
 
