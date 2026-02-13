@@ -80,7 +80,7 @@ def test_database_connectivity_from_scheduler(
         scheduler_unit,
         "bash -lc " + shlex.quote(check_cmd),
     )
-    assert "Connection successful." in out, f"Failed to connect to the DB: {out}"
+    assert "Connection successful" in out, f"Failed to connect to the DB: {out}"
 
 
 @pytest.mark.abort_on_fail

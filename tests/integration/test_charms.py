@@ -23,6 +23,11 @@ def test_full_stack_goes_active_and_core_services_run(
     deployed_stack,
 ):
     """Full stack should go active and core services should be running."""
+    juju.wait(
+        ready=lambda st: jubilant.all_active(juju.status(), *constants.ALL_APPS),
+        timeout=5 * 60,
+    )
+    
     status = juju.status()
     for app in constants.ALL_APPS:
         app_status = status.apps[app]
