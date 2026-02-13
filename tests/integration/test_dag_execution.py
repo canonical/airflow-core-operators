@@ -4,7 +4,7 @@ import time
 import pytest
 import jubilant
 import shlex
-from tenacity import Retrying, stop_after_attempt, wait_fixed
+import tenacity
 from tests.integration.helpers.airflow_helpers import (
     json_from_airflow,
 )
@@ -51,8 +51,10 @@ def test_dag_discovery_and_execution(
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
 
-    for attempt in Retrying(
-        stop=stop_after_attempt(36), wait=wait_fixed(10), reraise=True
+    for attempt in tenacity.Retrying(
+        stop=tenacity.stop_after_attempt(36),
+        wait=tenacity.wait_fixed(10),
+        reraise=True,
     ):
         with attempt:
             out = juju.cli(
@@ -85,8 +87,10 @@ def test_dag_discovery_and_execution(
     )
 
     queued_or_running = False
-    for attempt in Retrying(
-        stop=stop_after_attempt(36), wait=wait_fixed(10), reraise=True
+    for attempt in tenacity.Retrying(
+        stop=tenacity.stop_after_attempt(36),
+        wait=tenacity.wait_fixed(10),
+        reraise=True,
     ):
         with attempt:
             out = juju.cli(

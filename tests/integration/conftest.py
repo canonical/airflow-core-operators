@@ -158,7 +158,10 @@ def invariant_checker(juju: jubilant.Juju):
             "Skipping invariant post-check as model (apps + ready) not present yet"
         )
         return
-    juju.wait(jubilant.all_active(juju.status()), timeout=5 * 60)
+    juju.wait(
+        ready=lambda st: jubilant.all_active(juju.status(), *constants.ALL_APPS),
+        timeout=5 * 60,
+    )
     assert jubilant.all_active(juju.status())
 
 
