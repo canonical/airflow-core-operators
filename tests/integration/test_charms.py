@@ -27,7 +27,7 @@ def test_full_stack_goes_active_and_core_services_run(
         ready=lambda st: jubilant.all_active(juju.status(), *constants.ALL_APPS),
         timeout=5 * 60,
     )
-    
+
     status = juju.status()
     for app in constants.ALL_APPS:
         app_status = status.apps[app]

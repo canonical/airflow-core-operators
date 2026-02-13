@@ -125,44 +125,40 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         timeout=10 * 60,
     )
 
-# @pytest.fixture(autouse=True)
-# def invariant_checker(juju: jubilant.Juju):
-#     all_apps_deployed = all(app in juju.status().apps for app in constants.ALL_APPS)
 
-#     expected_relations_present = all(
-#         juju.status().apps.get(application)
-#         and len(juju.status().apps[application].relations.get(relation_endpoint, []))
-#         for application, relation_endpoint in EXPECTED_RELATIONS
-#     )
+@pytest.fixture(autouse=True)
+def invariant_checker(juju: jubilant.Juju):
+    all_apps_deployed = all(app in juju.status().apps for app in constants.ALL_APPS)
 
-#     if not all_apps_deployed or not expected_relations_present:
-#         logger.info(
-#             "Skipping invariant pre-check as model (apps + ready) not present yet"
-#         )
-#     else:
-#         assert jubilant.all_active(juju.status())
+    expected_relations_present = all(
+        juju.status().apps.get(application)
+        and len(juju.status().apps[application].relations.get(relation_endpoint, []))
+        for application, relation_endpoint in EXPECTED_RELATIONS
+    )
 
-#     yield
+    if not all_apps_deployed or not expected_relations_present:
+        logger.info(
+            "Skipping invariant pre-check as model (apps + ready) not present yet"
+        )
+    else:
+        assert jubilant.all_active(juju.status())
 
-#     all_apps_deployed = all(app in juju.status().apps for app in constants.ALL_APPS)
+    yield
 
-#     expected_relations_present = all(
-#         juju.status().apps.get(application)
-#         and len(juju.status().apps[application].relations.get(relation_endpoint, []))
-#         for application, relation_endpoint in EXPECTED_RELATIONS
-#     )
+    all_apps_deployed = all(app in juju.status().apps for app in constants.ALL_APPS)
 
-#     if not all_apps_deployed or not expected_relations_present:
-#         logger.info(
-#             "Skipping invariant post-check as model (apps + ready) not present yet"
-#         )
-#         return
-#     juju.wait(
-#         ready=lambda st: jubilant.all_active(juju.status(), *constants.ALL_APPS),
-#         timeout=5 * 60,
-#     )
-#     assert jubilant.all_active(juju.status())
+    expected_relations_present = all(
+        juju.status().apps.get(application)
+        and len(juju.status().apps[application].relations.get(relation_endpoint, []))
+        for application, relation_endpoint in EXPECTED_RELATIONS
+    )
 
+    if not all_apps_deployed or not expected_relations_present:
+        logger.info(
+            "Skipping invariant post-check as model (apps + ready) not present yet"
+        )
+    else:
+        assert jubilant.all_active(juju.status())
 
 def file_exists(juju: jubilant.Juju, unit: str, container: str, path: str) -> bool:
     """Check if file exists in container."""

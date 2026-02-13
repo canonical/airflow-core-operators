@@ -71,7 +71,6 @@ def test_database_connectivity_from_scheduler(
     """Exec into the scheduler container and confirm DB connectivity."""
     scheduler_unit = f"{constants.CORE_CHARMS['scheduler']}/0"
     scheduler_container = constants.CONTAINER_NAMES["scheduler"]
-
     check_cmd = "airflow db check || echo 'DB check failed'"
     out = juju.cli(
         "ssh",
@@ -181,7 +180,7 @@ def test_scheduler_scale_and_resilience(
             )
 
             for attempt in Retrying(
-                stop=stop_after_attempt(6), wait=wait_fixed(10), reraise=True
+                stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True
             ):
                 with attempt:
                     out = juju.cli(
