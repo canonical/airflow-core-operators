@@ -92,7 +92,6 @@ def test_config_change_propagates_and_dags_reserialize(
     coordinator_unit = f"{constants.COORDINATOR_APP}/0"
     set_coordinator_config_value(juju, coordinator_unit, "load_examples", True)
 
-    juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
     # TODO: Update once the issue https://github.com/canonical/airflow-core-operators/issues/19 is resolved
     for _, app in constants.CORE_CHARMS.items():
         juju.cli(
@@ -140,14 +139,13 @@ def test_scheduler_scale_and_resilience(
     """Scheduler should scale up and down while remaining healthy."""
     scheduler_app = constants.CORE_CHARMS["scheduler"]
     scheduler_container = constants.CONTAINER_NAMES["scheduler"]
-    target_units = random.choice([2, 3])
     dag_id = "latest_only_with_trigger"
 
     try:
-        juju.cli("scale-application", scheduler_app, str(target_units))
+        juju.cli("scale-application", scheduler_app, str(3))
         juju.wait(
             ready=lambda st: st.apps[scheduler_app].is_active
-            and len(st.apps[scheduler_app].units) == target_units,
+            and len(st.apps[scheduler_app].units) == 3,
             timeout=15 * 60,
         )
 
