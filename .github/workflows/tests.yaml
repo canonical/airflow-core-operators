@@ -123,7 +123,7 @@ jobs:
 
           uv tool install tox
       - name: Run tmate
-        uses: mxschmitt/action-tmate@v3.0.4
+        uses: mxschmitt/action-tmate@v3
         
       - name: Run integration test file
         run: just integration ${{ matrix.test_file }}
