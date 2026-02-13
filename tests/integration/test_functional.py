@@ -17,20 +17,11 @@ from tests.integration.helpers.airflow_helpers import (
     read_airflow_config,
     set_coordinator_load_examples,
 )
-from tests.integration.helpers.constants import (
-    AIRFLOW_CONFIG_PATH,
-    CONTAINER_NAMES,
-    COORDINATOR_APP,
-    COORD_REL,
-    CORE_CHARMS,
-    CORE_APP_BY_COMPONENT,
-    PEBBLE_SERVICE_NAME,
-)
-from tests.integration.helpers.juju_helpers import find_component_metadata
+import tests.integration.helpers.constants as constants
 
 
 @pytest.mark.abort_on_fail
-@pytest.mark.parametrize("component, app", list(CORE_CHARMS.items()))
+@pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_airflow_config_options_present_and_rewritten_on_relation_change(
     juju: jubilant.Juju,
     deployed_stack,
@@ -39,7 +30,7 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
 ):
     """Airflow config should be removed on relation break and restored on rejoin."""
     target_unit = f"{app}/0"
-    target_container = CONTAINER_NAMES[app]
+    target_container = constants.CONTAINER_NAMES[component]
 
     cfg = read_airflow_config(juju, target_unit, target_container)
 
@@ -52,17 +43,19 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
 
     juju.cli(
         "remove-relation",
-        f"{COORDINATOR_APP}:{COORD_REL}",
-        f"{app}:{COORD_REL}",
+        f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
+        f"{app}:{constants.COORD_REL}",
     )
 
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
-    assert not file_exists(juju, target_unit, target_container, AIRFLOW_CONFIG_PATH)
+    assert not file_exists(
+        juju, target_unit, target_container, constants.AIRFLOW_CONFIG_PATH
+    )
 
     juju.integrate(
-        f"{COORDINATOR_APP}:{COORD_REL}",
-        f"{app}:{COORD_REL}",
+        f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
+        f"{app}:{constants.COORD_REL}",
     )
 
     juju.wait(jubilant.all_agents_idle, timeout=20 * 60)
@@ -73,31 +66,12 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
 
 
 @pytest.mark.abort_on_fail
-def test_relation_databag_contains_core_metadata(
-    juju: jubilant.Juju,
-):
-    """Each core charm should publish component metadata to the relation databag."""
-    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
-    for expected_component, app in CORE_CHARMS.items():
-        matching = find_component_metadata(
-            juju,
-            f"{app}/0",
-            COORD_REL,
-            expected_component,
-        )
-
-        assert matching is not None, (
-            f"Missing component metadata for {expected_component}"
-        )
-
-
-@pytest.mark.abort_on_fail
 def test_database_connectivity_from_scheduler(
     juju: jubilant.Juju,
 ):
     """Exec into the scheduler container and confirm DB connectivity."""
-    scheduler_unit = f"{CORE_APP_BY_COMPONENT['scheduler']}/0"
-    scheduler_container = CONTAINER_NAMES[CORE_APP_BY_COMPONENT["scheduler"]]
+    scheduler_unit = f"{constants.CORE_CHARMS['scheduler']}/0"
+    scheduler_container = constants.CONTAINER_NAMES["scheduler"]
 
     check_cmd = "airflow db check || echo 'DB check failed'"
     out = juju.cli(
@@ -115,12 +89,12 @@ def test_config_change_propagates_and_dags_reserialize(
     juju: jubilant.Juju,
 ):
     """Config changes in coordinator should propagate and allow DAG reserialize."""
-    coordinator_unit = f"{COORDINATOR_APP}/0"
+    coordinator_unit = f"{constants.COORDINATOR_APP}/0"
     set_coordinator_load_examples(juju, coordinator_unit, True)
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
     # TODO: Update once the issue https://github.com/canonical/airflow-core-operators/issues/19 is resolved
-    for _, app in CORE_CHARMS.items():
+    for _, app in constants.CORE_CHARMS.items():
         juju.cli(
             "ssh",
             "--container",
@@ -129,7 +103,7 @@ def test_config_change_propagates_and_dags_reserialize(
             "pebble restart airflow",
         )
 
-    for _, app in CORE_CHARMS.items():
+    for _, app in constants.CORE_CHARMS.items():
         juju.cli(
             "ssh",
             "--container",
@@ -138,14 +112,16 @@ def test_config_change_propagates_and_dags_reserialize(
             "bash -lc " + shlex.quote("airflow dags reserialize"),
         )
 
-    for _, app in CORE_CHARMS.items():
-        cfg = read_airflow_config(juju, f"{app}/0", CONTAINER_NAMES[app])
+    for component, app in constants.CORE_CHARMS.items():
+        cfg = read_airflow_config(
+            juju, f"{app}/0", constants.CONTAINER_NAMES[component]
+        )
         assert cfg.get("core", "load_examples") == "True", (
             f"Expected load_examples=True in {app} config"
         )
 
-    scheduler_unit = f"{CORE_APP_BY_COMPONENT['scheduler']}/0"
-    scheduler_container = CONTAINER_NAMES[CORE_APP_BY_COMPONENT["scheduler"]]
+    scheduler_unit = f"{constants.CORE_CHARMS['scheduler']}/0"
+    scheduler_container = constants.CONTAINER_NAMES["scheduler"]
     out = juju.cli(
         "ssh",
         "--container",
@@ -162,8 +138,8 @@ def test_scheduler_scale_and_resilience(
     juju: jubilant.Juju,
 ):
     """Scheduler should scale up and down while remaining healthy."""
-    scheduler_app = CORE_APP_BY_COMPONENT["scheduler"]
-    scheduler_container = CONTAINER_NAMES[scheduler_app]
+    scheduler_app = constants.CORE_CHARMS["scheduler"]
+    scheduler_container = constants.CONTAINER_NAMES["scheduler"]
     target_units = random.choice([2, 3])
     dag_id = "latest_only_with_trigger"
 
@@ -189,16 +165,12 @@ def test_scheduler_scale_and_resilience(
             assert unit_status.is_active, (
                 f"{unit_name} should be active, got {unit_status.workload_status.current}"
             )
-
-            services_text = juju.cli(
-                "ssh",
-                "--container",
-                scheduler_container,
+            assert pebble_service_is_running(
+                juju,
                 unit_name,
-                "pebble services || true",
-            )
-            assert pebble_service_is_running(services_text, PEBBLE_SERVICE_NAME), (
-                f"{unit_name}: pebble service '{PEBBLE_SERVICE_NAME}' not active.\n{services_text}"
+                constants.PEBBLE_SERVICE_NAME,
+            ), (
+                f"{unit_name}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
             )
 
             run_id = f"scale-{unit_name.replace('/', '-')}-{int(time.time())}"

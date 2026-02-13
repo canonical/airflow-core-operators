@@ -13,7 +13,6 @@ from tenacity import (
     retry_if_exception_type,
 )
 import logging
-import textwrap
 
 logger = logging.getLogger(__name__)
 
@@ -84,12 +83,10 @@ def ensure_db_migrated(juju: jubilant.Juju, app: str) -> None:
     container = app.replace("-k8s", "")
 
     try:
-        services_text = juju.cli(
-            "ssh",
-            "--container",
-            container,
+        service_ready = pebble_service_is_running(
+            juju,
             unit,
-            "pebble services || true",
+            constants.PEBBLE_SERVICE_NAME,
         )
     except Exception as exc:
         logger.info("Pebble service not ready yet, retrying...")
@@ -97,7 +94,7 @@ def ensure_db_migrated(juju: jubilant.Juju, app: str) -> None:
             f"Failed checking Pebble services for {app}"
         ) from exc
 
-    if not pebble_service_is_running(services_text, constants.PEBBLE_SERVICE_NAME):
+    if not service_ready:
         logger.info("Pebble service not ready yet, retrying...")
         raise ServiceNotReadyError(
             f"Timed out waiting for '{constants.PEBBLE_SERVICE_NAME}' service in {app}"
@@ -129,22 +126,3 @@ def restart_airflow_service(juju: jubilant.Juju, app: str) -> None:
         f"{app}/0",
         "pebble restart airflow",
     )
-
-
-def functional_test_dag(dag_id: str) -> str:
-    """Return the DAG used by integration functional tests."""
-    return textwrap.dedent(
-        f"""
-            from airflow import DAG
-            from airflow.operators.bash import BashOperator
-            from datetime import datetime
-
-            with DAG(
-                dag_id="{dag_id}",
-                start_date=datetime(2023, 1, 1),
-                schedule=None,
-                catchup=False,
-            ) as dag:
-                BashOperator(task_id="ping", bash_command="echo pong")
-            """
-    ).lstrip()

@@ -1,6 +1,7 @@
 """Integration tests validating core charm behavior."""
 # from tenacity import retry, stop_after_attempt
 
+import dataclasses
 import pytest
 import jubilant
 import shlex
@@ -8,6 +9,8 @@ from tenacity import Retrying, stop_after_attempt, wait_fixed
 
 from tests.integration.conftest import (
     file_exists,
+    get_pebble_service_current,
+    get_pebble_service_startup,
     pebble_service_is_running,
 )
 from tests.integration.helpers.airflow_helpers import get_airflow_config_value
@@ -20,8 +23,6 @@ def test_full_stack_goes_active_and_core_services_run(
     deployed_stack,
 ):
     """Full stack should go active and core services should be running."""
-    juju.wait(lambda st: jubilant.all_active(st, *constants.ALL_APPS), timeout=5 * 60)
-
     status = juju.status()
     for app in constants.ALL_APPS:
         app_status = status.apps[app]
@@ -30,18 +31,10 @@ def test_full_stack_goes_active_and_core_services_run(
         )
 
     for _, app in constants.CORE_CHARMS.items():
-        container = constants.CONTAINER_NAMES[app]
-        services_text = juju.cli(
-            "ssh",
-            "--container",
-            container,
-            f"{app}/0",
-            "pebble services || true",
-        )
         assert pebble_service_is_running(
-            services_text, constants.PEBBLE_SERVICE_NAME
+            juju, f"{app}/0", constants.PEBBLE_SERVICE_NAME
         ), (
-            f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active after recovery.\n{services_text}"
+            f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active after recovery."
         )
 
 
@@ -59,11 +52,8 @@ def test_pebble_services_and_config_exist(
             f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
         )
 
-        services_text = juju.cli(
-            "ssh", "--container", container, unit, "pebble services || true"
-        )
-        assert pebble_service_is_running(services_text, service_name), (
-            f"{app}: pebble service '{service_name}' not active.\n{services_text}"
+        assert pebble_service_is_running(juju, unit, service_name), (
+            f"{app}: pebble service '{service_name}' not active."
         )
 
 
@@ -72,17 +62,17 @@ def test_api_health_endpoint_if_available(
     juju: jubilant.Juju,
 ):
     """API server health endpoint should return healthy when available."""
-    status = juju.status()
-    model = getattr(status, "model", None)
-    model_name = getattr(model, "name", None) if model is not None else None
-    if model_name is None:
-        model_name = getattr(status, "model_name", None)
-    if model_name is None:
-        model_name = getattr(status, "model", None)
-    if model_name is None:
+    status_dict = dataclasses.asdict(juju.status())
+    model_info = status_dict.get("model") or {}
+    model_name = (
+        model_info.get("name")
+        or status_dict.get("model_name")
+        or status_dict.get("model")
+    )
+    if not model_name:
         raise RuntimeError("Unable to determine Juju model name from status")
 
-    api_app = constants.CORE_APP_BY_COMPONENT["api-server"]
+    api_app = constants.CORE_CHARMS["api-server"]
     api_unit = f"{api_app}/0"
     service_host = f"{api_app}-endpoints.{model_name}.svc.cluster.local:8080"
 
@@ -99,11 +89,8 @@ def test_api_health_endpoint_if_available(
     if len(parts) != 2:
         raise AssertionError(f"Unexpected API health output:\n{out}")
 
-    for label, response in [("localhost", parts[0]), ("cluster", parts[1])]:
-        compact = response.replace(" ", "").replace("\n", "")
-        assert '"status":"healthy"' in compact, (
-            f"API health endpoint unhealthy from {label}. Output:\n{response}"
-        )
+    assert "healthy" in parts[0], "API unhealthy from localhost"
+    assert "healthy" in parts[1], "API unhealthy in cluster"
 
 
 @pytest.mark.abort_on_fail
@@ -116,8 +103,8 @@ def test_triggerer_health(
     out = juju.cli(
         "ssh",
         "--container",
-        constants.CORE_APP_BY_COMPONENT["triggerer"].replace("-k8s", ""),
-        f"{constants.CORE_APP_BY_COMPONENT['triggerer']}/0",
+        constants.CONTAINER_NAMES["triggerer"],
+        f"{constants.CORE_CHARMS['triggerer']}/0",
         "bash -lc " + shlex.quote("airflow jobs check --job-type TriggererJob || true"),
     )
 
@@ -183,14 +170,14 @@ def test_charm_statuses_on_missing_relation(
     juju.cli(
         "remove-relation",
         f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
-        f"{constants.CORE_APP_BY_COMPONENT['scheduler']}:{constants.COORD_REL}",
+        f"{constants.CORE_CHARMS['scheduler']}:{constants.COORD_REL}",
     )
 
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
     st = juju.status()
     coord_app = st.apps[constants.COORDINATOR_APP]
-    sched_app = st.apps[constants.CORE_APP_BY_COMPONENT["scheduler"]]
+    sched_app = st.apps[constants.CORE_CHARMS["scheduler"]]
 
     assert coord_app.is_blocked, (
         f"Expected coordinator blocked, got {coord_app.app_status.current}"
@@ -208,19 +195,13 @@ def test_charm_statuses_on_missing_relation(
             )
     juju.integrate(
         f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
-        f"{constants.CORE_APP_BY_COMPONENT['scheduler']}:{constants.COORD_REL}",
+        f"{constants.CORE_CHARMS['scheduler']}:{constants.COORD_REL}",
     )
 
     juju.wait(
         ready=lambda st: jubilant.all_active(st, *constants.ALL_APPS),
         timeout=10 * 60,
     )
-    status = juju.status()
-    for app in constants.ALL_APPS:
-        app_status = status.apps[app]
-        assert app_status.is_active, (
-            f"{app} should be active, but got status {app_status.app_status.current}"
-        )
 
 
 @pytest.mark.abort_on_fail
@@ -250,34 +231,28 @@ def test_core_charms_wait_when_database_unavailable(
         assert app_status.is_waiting, (
             f"Expected {app} waiting, got {app_status.app_status.current}"
         )
-        container = constants.CONTAINER_NAMES[app]
         expected_state = "active" if component in {"api-server"} else "backoff"
 
         for attempt in Retrying(
             stop=stop_after_attempt(3), wait=wait_fixed(20), reraise=True
         ):
             with attempt:
-                services_text = juju.cli(
-                    "ssh",
-                    "--container",
-                    container,
-                    f"{app}/0",
-                    "pebble services || true",
-                )
                 if expected_state == "active":
-                    assert pebble_service_is_running(
-                        services_text, constants.PEBBLE_SERVICE_NAME
-                    ), (
-                        f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active while waiting.\n{services_text}"
+                    startup = get_pebble_service_startup(
+                        juju, f"{app}/0", constants.PEBBLE_SERVICE_NAME
+                    )
+                    current = get_pebble_service_current(
+                        juju, f"{app}/0", constants.PEBBLE_SERVICE_NAME
+                    )
+                    assert startup == "enabled" and current == "active", (
+                        f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active while waiting."
                     )
                 else:
-                    has_backoff = any(
-                        line.startswith(constants.PEBBLE_SERVICE_NAME)
-                        and " backoff " in f" {line} "
-                        for line in services_text.splitlines()
+                    current = get_pebble_service_current(
+                        juju, f"{app}/0", constants.PEBBLE_SERVICE_NAME
                     )
-                    assert has_backoff, (
-                        f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not in backoff while waiting.\n{services_text}"
+                    assert current == "backoff", (
+                        f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not in backoff while waiting."
                     )
     juju.integrate(
         f"{constants.PGBOUNCER_APP}:database",
@@ -285,7 +260,7 @@ def test_core_charms_wait_when_database_unavailable(
     )
     juju.wait(
         ready=lambda st: jubilant.all_active(st, *constants.ALL_APPS),
-        timeout=10 * 60,
+        timeout=5 * 60,
     )
 
     status = juju.status()

@@ -21,16 +21,13 @@ def test_dag_discovery_and_execution(
     deployed_stack,
 ):
     """Injected DAG should be discovered and complete successfully."""
-    scheduler_unit = f"{constants.CORE_APP_BY_COMPONENT['scheduler']}/0"
-    scheduler_container = constants.CONTAINER_NAMES[
-        constants.CORE_APP_BY_COMPONENT["scheduler"]
-    ]
+    scheduler_unit = f"{constants.CORE_CHARMS['scheduler']}/0"
+    scheduler_container = constants.CONTAINER_NAMES["scheduler"]
 
-    dag_id = constants.FUNCTIONAL_DAG_ID
     dag_content = Path(constants.FUNCTIONAL_DAG_TEMPLATE).read_text(encoding="utf-8")
-    for app in constants.CORE_APPS:
+    for component, app in constants.CORE_CHARMS.items():
         unit = f"{app}/0"
-        container = constants.CONTAINER_NAMES[app]
+        container = constants.CONTAINER_NAMES[component]
         push_text_file(
             juju,
             unit,
@@ -41,9 +38,9 @@ def test_dag_discovery_and_execution(
 
         juju.cli("ssh", "--container", container, unit, f"ls -l {constants.DAGS_FILE}")
 
-    for app in constants.CORE_APPS:
+    for component, app in constants.CORE_CHARMS.items():
         unit = f"{app}/0"
-        container = constants.CONTAINER_NAMES[app]
+        container = constants.CONTAINER_NAMES[component]
         juju.cli(
             "ssh",
             "--container",
@@ -68,7 +65,11 @@ def test_dag_discovery_and_execution(
             )
 
             dags = json_from_airflow(out)
-            if not any(d.get("dag_id") == dag_id for d in dags if isinstance(d, dict)):
+            if not any(
+                d.get("dag_id") == constants.FUNCTIONAL_DAG_ID
+                for d in dags
+                if isinstance(d, dict)
+            ):
                 raise AssertionError("DAG not discovered yet")
 
     run_id = f"it-{int(time.time())}"
@@ -77,7 +78,10 @@ def test_dag_discovery_and_execution(
         "--container",
         scheduler_container,
         scheduler_unit,
-        "bash -lc " + shlex.quote(f"airflow dags trigger {dag_id} --run-id {run_id}"),
+        "bash -lc "
+        + shlex.quote(
+            f"airflow dags trigger {constants.FUNCTIONAL_DAG_ID} --run-id {run_id}"
+        ),
     )
 
     queued_or_running = False
@@ -92,7 +96,7 @@ def test_dag_discovery_and_execution(
                 scheduler_unit,
                 "bash -lc "
                 + shlex.quote(
-                    f"PYTHONWARNINGS=ignore NO_COLOR=1 CLICOLOR=0 TERM=dumb airflow dags list-runs {dag_id} --output json"
+                    f"PYTHONWARNINGS=ignore NO_COLOR=1 CLICOLOR=0 TERM=dumb airflow dags list-runs {constants.FUNCTIONAL_DAG_ID} --output json"
                 ),
             )
             runs = json_from_airflow(out)

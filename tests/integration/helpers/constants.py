@@ -1,6 +1,5 @@
 """Shared constants and helpers for integration tests."""
 
-import os
 import re
 from pathlib import Path
 
@@ -30,7 +29,7 @@ def _get_container_name(charm_dir: str) -> str:
     raise ValueError(f"No containers defined in charmcraft.yaml for {charm_dir}")
 
 
-IMAGE = os.environ.get("AIRFLOW_IMAGE", "ubuntu/airflow:3.1-24.04_edge")
+IMAGE = "ubuntu/airflow:3.1-24.04_edge"
 
 CORE_CHARMS = {
     "api-server": "airflow-api-server-k8s",
@@ -40,28 +39,25 @@ CORE_CHARMS = {
 }
 CORE_COMPONENTS = CORE_CHARMS.keys()
 CORE_APPS = CORE_CHARMS.values()
-CORE_APP_BY_COMPONENT = {component: app for component, app in CORE_CHARMS.items()}
 
 CONTAINER_NAMES = {
-    app: _get_container_name(component) for component, app in CORE_CHARMS.items()
+    component: _get_container_name(component) for component, app in CORE_CHARMS.items()
 }
-
+AIRFLOW_HOME = "/opt/airflow"
 POSTGRES_APP = "postgresql-k8s"
-PGBOUNCER_APP = os.environ.get("PGBOUNCER_APP", "pgbouncer-k8s")
+PGBOUNCER_APP = "pgbouncer-k8s"
 COORDINATOR_APP = "airflow-coordinator-k8s"
 
 ALL_APPS = [POSTGRES_APP, PGBOUNCER_APP, COORDINATOR_APP] + list(CORE_APPS)
 
-POSTGRES_CHANNEL = os.environ.get("POSTGRES_CHANNEL", "14/stable")
-POSTGRES_PROFILE = os.environ.get("POSTGRES_PROFILE", "testing")
-PGBOUNCER_CHANNEL = "1/stable"
-COORDINATOR_CHANNEL = os.environ.get("COORDINATOR_CHANNEL", "3.1/edge")
+POSTGRES_CHANNEL = "14/stable"
+COORDINATOR_CHANNEL = "3.1/edge"
 
-COORD_REL = os.environ.get("COORD_REL", "airflow-coordinator")
-AIRFLOW_CONFIG_PATH = os.environ.get("AIRFLOW_CONFIG_PATH", "/opt/airflow/airflow.cfg")
-DEFAULT_DAGS_PATH = os.environ.get("DAGS_PATH", "/opt/airflow/dags")
+COORD_REL = "airflow-coordinator"
+AIRFLOW_CONFIG_PATH = f"{AIRFLOW_HOME}/airflow.cfg"
+DEFAULT_DAGS_PATH = f"{AIRFLOW_HOME}/dags"
 
-AUTH_FILE = "/opt/airflow/simple_auth_manager_passwords.json.generated"
+AUTH_FILE = f"{AIRFLOW_HOME}/simple_auth_manager_passwords.json.generated"
 
 # TODO: Update the constant once the issue https://github.com/canonical/airflow-coordinator-k8s-operator/issues/16 is resolved
 DAGS_FILE = "/dags/test_dag.py"
@@ -69,8 +65,3 @@ DAGS_FILE = "/dags/test_dag.py"
 PEBBLE_SERVICE_NAME = "airflow"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-
-
-def get_core_app(component: str) -> str:
-    """Return the application name for a core component."""
-    return CORE_APP_BY_COMPONENT[component]
