@@ -77,13 +77,10 @@ def test_api_health_endpoint_if_available(
     service_host = f"{api_app}-endpoints.{model_name}.svc.cluster.local:8080"
 
     check_cmd = (
-        "command -v curl >/dev/null || { echo NO_CURL; exit 0; }; "
         "curl -s http://localhost:8080/api/v2/monitor/health; echo '---'; "
         f"curl -s http://{service_host}/api/v2/monitor/health"
     )
     out = juju.cli("ssh", api_unit, "bash -lc " + shlex.quote(check_cmd))
-    if "NO_CURL" in out:
-        pytest.skip("curl not available in API server container")
 
     parts = out.split("---", 1)
     if len(parts) != 2:
@@ -175,9 +172,9 @@ def test_charm_statuses_on_missing_relation(
 
     juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
-    st = juju.status()
-    coord_app = st.apps[constants.COORDINATOR_APP]
-    sched_app = st.apps[constants.CORE_CHARMS["scheduler"]]
+    status = juju.status()
+    coord_app = status.apps[constants.COORDINATOR_APP]
+    sched_app = status.apps[constants.CORE_CHARMS["scheduler"]]
 
     assert coord_app.is_blocked, (
         f"Expected coordinator blocked, got {coord_app.app_status.current}"
@@ -189,7 +186,7 @@ def test_charm_statuses_on_missing_relation(
     waiting_components = {"api-server", "triggerer", "dag-processor"}
     for component, app in constants.CORE_CHARMS.items():
         if component in waiting_components:
-            app_status = st.apps[app]
+            app_status = status.apps[app]
             assert app_status.is_waiting, (
                 f"Expected {app} waiting, got {app_status.app_status.current}"
             )
@@ -198,10 +195,14 @@ def test_charm_statuses_on_missing_relation(
         f"{constants.CORE_CHARMS['scheduler']}:{constants.COORD_REL}",
     )
 
-    juju.wait(
-        ready=lambda st: jubilant.all_active(st, *constants.ALL_APPS),
-        timeout=10 * 60,
-    )
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=3, delay=20)
+
+    status = juju.status()
+    for app in constants.ALL_APPS:
+        app_status = status.apps[app]
+        assert app_status.is_active, (
+            f"{app} should be active, but got status {app_status.app_status.current}"
+        )
 
 
 @pytest.mark.abort_on_fail
@@ -231,7 +232,7 @@ def test_core_charms_wait_when_database_unavailable(
         assert app_status.is_waiting, (
             f"Expected {app} waiting, got {app_status.app_status.current}"
         )
-        expected_state = "active" if component in {"api-server"} else "backoff"
+        expected_state = "active" if component == "api-server" else "backoff"
 
         for attempt in Retrying(
             stop=stop_after_attempt(3), wait=wait_fixed(20), reraise=True
@@ -258,10 +259,7 @@ def test_core_charms_wait_when_database_unavailable(
         f"{constants.PGBOUNCER_APP}:database",
         f"{constants.COORDINATOR_APP}:postgres",
     )
-    juju.wait(
-        ready=lambda st: jubilant.all_active(st, *constants.ALL_APPS),
-        timeout=5 * 60,
-    )
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=3, delay=20)
 
     status = juju.status()
     for app in constants.ALL_APPS:

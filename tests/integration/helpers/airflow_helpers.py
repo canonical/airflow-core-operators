@@ -104,15 +104,21 @@ def ensure_db_migrated(juju: jubilant.Juju, app: str) -> None:
     juju.cli("ssh", "--container", container, unit, "bash -lc " + shlex.quote(cmd))
 
 
-def set_coordinator_load_examples(
-    juju: jubilant.Juju, coordinator_unit: str, load_examples: bool
+def set_coordinator_config_value(
+    juju: jubilant.Juju,
+    coordinator_unit: str,
+    key: str,
+    value: str | bool,
 ) -> None:
+    """Update a key in the coordinator airflow_config.j2 template."""
     unit_path = coordinator_unit.replace("/", "-")
     template_path = (
         f"/var/lib/juju/agents/unit-{unit_path}/charm/src/templates/airflow_config.j2"
     )
-    value = "True" if load_examples else "False"
-    cmd = f"sed -i 's/^load_examples = .*/load_examples = {value}/' {template_path}"
+    rendered_value = (
+        "True" if value is True else "False" if value is False else str(value)
+    )
+    cmd = f"sed -i 's/^{key} = .*/{key} = {rendered_value}/' {template_path}"
     juju.cli("ssh", coordinator_unit, "bash -lc " + shlex.quote(cmd))
 
 

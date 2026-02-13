@@ -15,7 +15,7 @@ from tests.integration.conftest import (
 from tests.integration.helpers.airflow_helpers import (
     json_from_airflow,
     read_airflow_config,
-    set_coordinator_load_examples,
+    set_coordinator_config_value,
 )
 import tests.integration.helpers.constants as constants
 
@@ -81,7 +81,7 @@ def test_database_connectivity_from_scheduler(
         scheduler_unit,
         "bash -lc " + shlex.quote(check_cmd),
     )
-    assert "DB check failed" not in out, f"Failed to connect to the DB: {out}"
+    assert "Connection successful." in out, f"Failed to connect to the DB: {out}"
 
 
 @pytest.mark.abort_on_fail
@@ -90,7 +90,7 @@ def test_config_change_propagates_and_dags_reserialize(
 ):
     """Config changes in coordinator should propagate and allow DAG reserialize."""
     coordinator_unit = f"{constants.COORDINATOR_APP}/0"
-    set_coordinator_load_examples(juju, coordinator_unit, True)
+    set_coordinator_config_value(juju, coordinator_unit, "load_examples", True)
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
     # TODO: Update once the issue https://github.com/canonical/airflow-core-operators/issues/19 is resolved
