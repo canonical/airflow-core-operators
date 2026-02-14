@@ -71,15 +71,15 @@ def test_database_connectivity_from_scheduler(
     """Exec into the scheduler container and confirm DB connectivity."""
     scheduler_unit = f"{constants.CORE_CHARMS['scheduler']}/0"
     scheduler_container = constants.CONTAINER_NAMES["scheduler"]
-    check_cmd = "airflow db check >/tmp/db_check.out 2>&1 && echo DB_CHECK_OK || { cat /tmp/db_check.out; echo DB_CHECK_FAIL; }"
+    
     out = juju.cli(
         "ssh",
         "--container",
         scheduler_container,
         scheduler_unit,
-        "bash -lc " + shlex.quote(check_cmd),
+        "bash -lc " + shlex.quote("airflow db check || echo 'DB check failed'"),
     )
-    assert "DB_CHECK_OK" in out, f"Failed to connect to the DB: {out}"
+    assert "Connection successful" in out, f"Failed to connect to the DB: {out}"
 
 
 @pytest.mark.abort_on_fail

@@ -73,9 +73,8 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         delay=30,
     )
 
-    logger.info("Deploying PgBouncer...")
     juju.deploy(constants.PGBOUNCER_APP, app=constants.PGBOUNCER_APP, trust=True)
-    logger.info("Integrating pgbouncer <-> postgres")
+    
     juju.integrate(
         f"{constants.PGBOUNCER_APP}:backend-database",
         f"{constants.POSTGRES_APP}:database",
@@ -85,7 +84,6 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         timeout=5 * 60,
     )
 
-    logger.info("Deploying Airflow Coordinator...")
 
     juju.deploy(
         constants.COORDINATOR_APP,
@@ -93,13 +91,11 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         channel=constants.COORDINATOR_CHANNEL,
     )
 
-    logger.info("Deploying core charms...")
     for _, app in constants.CORE_CHARMS.items():
         charm_path = str(core_charms[app])
         resources = {app.replace("-k8s", "-image"): constants.IMAGE}
         juju.deploy(charm_path, app=app, resources=resources)
 
-    logger.info("Integrating coordinator <-> pgbouncer")
     juju.integrate(
         f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database"
     )
@@ -110,7 +106,6 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         delay=30,
     )
 
-    logger.info("Integrating all core charms")
     for _, app in constants.CORE_CHARMS.items():
         juju.integrate(
             f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
@@ -118,8 +113,6 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         )
 
     ensure_db_migrated(juju, "airflow-api-server-k8s")
-    logger.info("Waiting for all core charm relations to be ready...")
-    juju.wait(jubilant.all_agents_idle, timeout=5 * 60)
     juju.wait(
         ready=lambda st: jubilant.all_active(st, *constants.ALL_APPS),
         timeout=10 * 60,

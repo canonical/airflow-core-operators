@@ -23,10 +23,10 @@ def test_full_stack_goes_active_and_core_services_run(
     deployed_stack,
 ):
     """Full stack should go active and core services should be running."""
-    juju.wait(
-        ready=lambda st: jubilant.all_active(juju.status(), *constants.ALL_APPS),
-        timeout=5 * 60,
-    )
+    # juju.wait(
+    #     ready=lambda st: jubilant.all_active(juju.status(), *constants.ALL_APPS),
+    #     timeout=5 * 60,
+    # )
 
     status = juju.status()
     for app in constants.ALL_APPS:
@@ -120,48 +120,51 @@ def test_triggerer_health(
 
 
 @pytest.mark.abort_on_fail
+@pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_airflow_config_cli_values(
     juju: jubilant.Juju,
+    component: str,
+    app: str,
 ):
     """Airflow CLI should return expected config values."""
     # TODO: Update the assertions related to dags and logs folder oncer the issue https://github.com/canonical/airflow-coordinator-k8s-operator/issues/16 is resolved
-    for _, app in constants.CORE_CHARMS.items():
-        assert (
-            get_airflow_config_value(
-                juju,
-                app,
-                "core",
-                "executor",
-            )
-            == "LocalExecutor"
+
+    assert (
+        get_airflow_config_value(
+            juju,
+            app,
+            "core",
+            "executor",
         )
-        assert (
-            get_airflow_config_value(
-                juju,
-                app,
-                "api",
-                "port",
-            )
-            == "8080"
+        == "LocalExecutor"
+    )
+    assert (
+        get_airflow_config_value(
+            juju,
+            app,
+            "api",
+            "port",
         )
-        assert (
-            get_airflow_config_value(
-                juju,
-                app,
-                "logging",
-                "base_log_folder",
-            )
-            == "logs"
+        == "8080"
+    )
+    assert (
+        get_airflow_config_value(
+            juju,
+            app,
+            "logging",
+            "base_log_folder",
         )
-        assert (
-            get_airflow_config_value(
-                juju,
-                app,
-                "core",
-                "dags_folder",
-            )
-            == "dags"
+        == "logs"
+    )
+    assert (
+        get_airflow_config_value(
+            juju,
+            app,
+            "core",
+            "dags_folder",
         )
+        == "dags"
+    )
 
 
 @pytest.mark.abort_on_fail
