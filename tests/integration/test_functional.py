@@ -77,10 +77,10 @@ def test_database_connectivity_from_scheduler(
         "--container",
         scheduler_container,
         scheduler_unit,
-        "bash -lc " + shlex.quote("airflow db check"),
+        "bash -lc " + shlex.quote("airflow db check && echo DB_CHECK_OK || echo DB_CHECK_FAILED"),
     )
     print(out)
-    assert "Connection successful" in out, f"Failed to connect to the DB: {out}"
+    assert "DB_CHECK_OK" in out, f"Failed to connect to the DB: {out}"
 
 
 @pytest.mark.abort_on_fail
