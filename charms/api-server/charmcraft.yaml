@@ -28,6 +28,11 @@ resources:
     description: OCI image for the airflow api server container
     upstream-source: ubuntu/airflow:3.1-24.04_edge
 
+provides:
+  airflow-api-server:
+    interface: airflow_api_server
+    limit: 1
+
 requires:
   airflow-coordinator:
     interface: airflow_coordinator
