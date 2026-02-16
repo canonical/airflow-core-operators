@@ -1,4 +1,52 @@
-"""TODO: Add a proper docstring here.
+""" Library to manage the relation provided by Airflow API Server charm.
+
+This library contains the Requires and Provides classes for handing the relation
+between the Airflow API Server charm and the Airflow Coordinator charm. This
+relation interface provides a way for the API server charm to convey information
+that will affect the global `airflow.cfg` file distributed by Airflow Coordinator.
+
+### Requirer Charm
+
+The following presents an example usage of the AirflowAPIServerRequires class:
+
+```python
+import charms.airflow_api_server_k8s.v0.airflow_api_server as airflow_api_server
+
+class AirflowCoordinatorCharm(ops.CharmBase):
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+
+        self.requirer = airflow_api_server.AirflowAPIServerRequires(
+            self,
+            "airflow-api-server", # relation endpoint
+            callback=self.reconcile,
+        )
+
+    def reconcile(self, event) -> None:
+        # Access the API server host and port
+        self.requirer.api_server_host
+        self.requirer.api_server_port
+```
+
+### Provider Charm
+
+The following presents an example usage of the AirflowAPIServerProvides class:
+
+```python
+import charms.airflow_api_server_k8s.v0.airflow_api_server as airflow_api_server
+
+class AirflowAPIServerCharm(ops.CharmBase):
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+
+        self.requirer = airflow_api_server.AirflowAPIServerProviders(
+            self,
+            "airflow-api-server", # relation endpoint
+            "airflow-api-server-k8s-endpoints.airflow-model.svc.cluster.local", # host
+            "8080", # port
+        )
+```
+
 """
 
 import logging
