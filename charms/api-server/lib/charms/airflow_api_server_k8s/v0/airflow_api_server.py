@@ -1,4 +1,4 @@
-""" Library to manage the relation provided by Airflow API Server charm.
+"""Library to manage the relation provided by Airflow API Server charm.
 
 This library contains the Requires and Provides classes for handing the relation
 between the Airflow API Server charm and the Airflow Coordinator charm. This
@@ -50,8 +50,9 @@ class AirflowAPIServerCharm(ops.CharmBase):
 """
 
 import logging
-import ops
 import typing
+
+import ops
 
 # The unique Charmhub library identifier, never change it
 LIBID = "a0959775f225419d86d202cd754066cf"

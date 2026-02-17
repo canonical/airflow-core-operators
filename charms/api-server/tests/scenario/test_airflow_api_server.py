@@ -7,7 +7,10 @@ import logging
 import ops
 import ops.testing
 import pytest
-from charms.airflow_api_server_k8s.v0.airflow_api_server import AirflowAPIServerProvides, AirflowAPIServerRequires
+from charms.airflow_api_server_k8s.v0.airflow_api_server import (
+    AirflowAPIServerProvides,
+    AirflowAPIServerRequires,
+)
 
 import constants
 
@@ -117,6 +120,7 @@ def requires_application_state(airflow_api_server_requires_relation):
         relations=[airflow_api_server_requires_relation],
     )
 
+
 class TestAirflowAPIServerProvides:
     def test_missing_relation(self, provides_application_context, provides_application_state):
         provides_application_state = dataclasses.replace(provides_application_state, relations=[])
@@ -170,7 +174,9 @@ class TestAirflowAPIServerRequires:
     def test_missing_relation(self, requires_application_context, requires_application_state):
         requires_application_state = dataclasses.replace(requires_application_state, relations=[])
 
-        with requires_application_context(requires_application_context.on.start(), requires_application_state) as manager:
+        with requires_application_context(
+            requires_application_context.on.start(), requires_application_state
+        ) as manager:
             state_out = manager.run()
 
             assert (
@@ -182,8 +188,16 @@ class TestAirflowAPIServerRequires:
             assert manager.charm.requires.api_server_host is None
             assert manager.charm.requires.api_server_port is None
 
-    def test_valid_relation(self, requires_application_context, requires_application_state, airflow_api_server_requires_relation):
-        with requires_application_context(requires_application_context.on.relation_changed(airflow_api_server_requires_relation), requires_application_state) as manager:
+    def test_valid_relation(
+        self,
+        requires_application_context,
+        requires_application_state,
+        airflow_api_server_requires_relation,
+    ):
+        with requires_application_context(
+            requires_application_context.on.relation_changed(airflow_api_server_requires_relation),
+            requires_application_state,
+        ) as manager:
             state_out = manager.run()
 
             assert (
@@ -195,11 +209,16 @@ class TestAirflowAPIServerRequires:
             assert manager.charm.requires.api_server_host == "test-receiving-host"
             assert manager.charm.requires.api_server_port == "test-receiving-port"
 
-        updated_relation = dataclasses.replace(airflow_api_server_requires_relation, remote_app_data={"host": "updated-receiving-host", "port": "updated-receiving-port"})
+        updated_relation = dataclasses.replace(
+            airflow_api_server_requires_relation,
+            remote_app_data={"host": "updated-receiving-host", "port": "updated-receiving-port"},
+        )
         updated_state = dataclasses.replace(state_out, relations=[updated_relation])
         updated_state = dataclasses.replace(updated_state, unit_status=ops.WaitingStatus())
 
-        with requires_application_context(requires_application_context.on.relation_changed(updated_relation), updated_state) as manager:
+        with requires_application_context(
+            requires_application_context.on.relation_changed(updated_relation), updated_state
+        ) as manager:
             state_out = manager.run()
 
             assert (
@@ -211,8 +230,16 @@ class TestAirflowAPIServerRequires:
             assert manager.charm.requires.api_server_host == "updated-receiving-host"
             assert manager.charm.requires.api_server_port == "updated-receiving-port"
 
-    def test_relation_break(self, requires_application_context, requires_application_state, airflow_api_server_requires_relation):
-        with requires_application_context(requires_application_context.on.relation_broken(airflow_api_server_requires_relation), requires_application_state) as manager:
+    def test_relation_break(
+        self,
+        requires_application_context,
+        requires_application_state,
+        airflow_api_server_requires_relation,
+    ):
+        with requires_application_context(
+            requires_application_context.on.relation_broken(airflow_api_server_requires_relation),
+            requires_application_state,
+        ) as manager:
             state_out = manager.run()
 
             assert (
