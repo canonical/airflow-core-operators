@@ -16,8 +16,7 @@ def _parse_charmcraft_yaml(charm_dir: str) -> dict:
     charmcraft_path = REPO_ROOT / "charms" / charm_dir / "charmcraft.yaml"
     if not charmcraft_path.exists():
         return {}
-    with open(charmcraft_path) as f:
-        return yaml.safe_load(f)
+    return yaml.safe_load(charmcraft_path.read_text())
 
 
 def _get_container_name(charm_dir: str) -> str:

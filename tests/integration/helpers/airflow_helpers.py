@@ -11,6 +11,7 @@ from tenacity import (
     stop_after_attempt,
     wait_fixed,
     retry_if_exception_type,
+    retry_if_result,
 )
 import logging
 
@@ -40,8 +41,10 @@ def read_airflow_config(
 ) -> configparser.ConfigParser:
     """Read the rendered airflow.cfg from the workload container."""
 
-    output = juju.cli(
-        "ssh", "--container", container, unit, "bash -lc " + shlex.quote(f"cat {path}")
+    output = juju.ssh(
+        unit,
+        "bash -lc " + shlex.quote(f"cat {path}"),
+        container=container,
     )
     parser = configparser.ConfigParser()
     parser.read_string(output)
@@ -50,6 +53,7 @@ def read_airflow_config(
 
 def get_airflow_config_value(
     juju: jubilant.Juju,
+    component: str,
     app: str,
     section: str,
     key: str,
@@ -57,12 +61,11 @@ def get_airflow_config_value(
     """Return a config value from the Airflow CLI."""
 
     cmd = f"airflow config get-value {section} {key}"
-    out = juju.cli(
-        "ssh",
-        "--container",
-        app.replace("-k8s", ""),
+    container = constants.CONTAINER_NAMES[component]
+    out = juju.ssh(
         f"{app}/0",
         "bash -lc " + shlex.quote(cmd),
+        container=container,
     )
     return clean_ansi(out).strip()
 
@@ -71,16 +74,17 @@ def get_airflow_config_value(
     stop=stop_after_attempt(30),
     wait=wait_fixed(5),
     reraise=True,
-    retry=retry_if_exception_type(ServiceNotReadyError),
+    retry=retry_if_exception_type(ServiceNotReadyError)
+    | retry_if_result(lambda result: result is False),
 )
-def ensure_db_migrated(juju: jubilant.Juju, app: str) -> None:
+def ensure_db_migrated(juju: jubilant.Juju, component: str, app: str) -> None:
     """Ensure the Airflow database migrations are fully applied."""
     from tests.integration.conftest import (
         pebble_service_is_running,
     )
 
     unit = f"{app}/0"
-    container = app.replace("-k8s", "")
+    container = constants.CONTAINER_NAMES[component]
 
     try:
         service_ready = pebble_service_is_running(
@@ -100,8 +104,17 @@ def ensure_db_migrated(juju: jubilant.Juju, app: str) -> None:
             f"Timed out waiting for '{constants.PEBBLE_SERVICE_NAME}' service in {app}"
         )
 
-    cmd = "airflow db migrate"
-    juju.cli("ssh", "--container", container, unit, "bash -lc " + shlex.quote(cmd))
+    cmd = "airflow db migrate; echo __EXIT:$?"
+    out = juju.ssh(unit, "bash -lc " + shlex.quote(cmd), container=container)
+    exit_code = None
+    for line in out.splitlines():
+        if line.startswith("__EXIT:"):
+            exit_code = line.split(":", 1)[1].strip()
+            break
+    success = exit_code == "0"
+    if not success:
+        logger.info("Airflow DB migration failed for %s: %s", app, out)
+    return success
 
 
 def set_coordinator_config_value(
@@ -119,16 +132,17 @@ def set_coordinator_config_value(
         "True" if value is True else "False" if value is False else str(value)
     )
     cmd = f"sed -i 's/^{key} = .*/{key} = {rendered_value}/' {template_path}"
-    juju.cli("ssh", coordinator_unit, "bash -lc " + shlex.quote(cmd))
+    juju.ssh(coordinator_unit, "bash -lc " + shlex.quote(cmd))
 
 
-def restart_airflow_service(juju: jubilant.Juju, app: str) -> None:
-    """Restart the airflow service in the workload container via Pebble."""
+# def restart_airflow_service(juju: jubilant.Juju, app: str) -> None:
+#     """Restart the airflow service in the workload container via Pebble."""
 
-    juju.cli(
-        "ssh",
-        "--container",
-        app.replace("-k8s", ""),
-        f"{app}/0",
-        "pebble restart airflow",
-    )
+#     juju.cli(
+#         "ssh",
+#         "--container",
+#         app.replace("-k8s", ""),
+#         f"{app}/0",
+#         "pebble restart airflow",
+#         container=container,
+#     )

@@ -7,10 +7,7 @@ import pytest
 import jubilant
 from tenacity import Retrying, stop_after_attempt, wait_fixed
 
-from tests.integration.conftest import (
-    file_exists,
-    pebble_service_is_running,
-)
+from tests.integration.conftest import pebble_service_is_running
 from tests.integration.helpers.airflow_helpers import (
     json_from_airflow,
     read_airflow_config,
@@ -19,7 +16,7 @@ from tests.integration.helpers.airflow_helpers import (
 import tests.integration.helpers.constants as constants
 
 
-@pytest.mark.abort_on_fail
+# @pytest.mark.abort_on_fail
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_airflow_config_options_present_and_rewritten_on_relation_change(
     juju: jubilant.Juju,
@@ -40,74 +37,68 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
     assert cfg.get("api", "port") == "8080"
     assert cfg.get("logging", "base_log_folder") == "logs"
 
-    juju.cli(
-        "remove-relation",
+    juju.remove_relation(
         f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
         f"{app}:{constants.COORD_REL}",
     )
 
-    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
+    # juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
 
-    assert not file_exists(
-        juju, target_unit, target_container, constants.AIRFLOW_CONFIG_PATH
+    output = juju.ssh(
+        target_unit,
+        f"test -f {shlex.quote(constants.AIRFLOW_CONFIG_PATH)} && echo OK || echo MISSING",
+        container=target_container,
     )
+    assert "OK" not in output
 
     juju.integrate(
         f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
         f"{app}:{constants.COORD_REL}",
     )
 
-    juju.wait(jubilant.all_agents_idle, timeout=20 * 60)
+    juju.wait(jubilant.all_active, timeout=20 * 60)
 
     cfg = read_airflow_config(juju, target_unit, target_container)
     assert cfg.get("core", "executor") == "LocalExecutor"
     assert cfg.get("database", "sql_alchemy_conn").startswith("postgresql+psycopg2://")
 
 
-@pytest.mark.abort_on_fail
+# @pytest.mark.abort_on_fail
 def test_database_connectivity_from_scheduler(
     juju: jubilant.Juju,
 ):
     """Exec into the scheduler container and confirm DB connectivity."""
-    scheduler_unit = f"{constants.CORE_CHARMS['scheduler']}/0"
-    scheduler_container = constants.CONTAINER_NAMES["scheduler"]
-    
-    out = juju.cli(
-        "ssh",
-        "--container",
-        scheduler_container,
-        scheduler_unit,
-        "bash -lc " + shlex.quote("airflow db check && echo DB_CHECK_OK || echo DB_CHECK_FAILED"),
+
+    out = juju.ssh(
+        f"{constants.CORE_CHARMS['scheduler']}/0",
+        "bash -lc "
+        + shlex.quote("airflow db check && echo DB_CHECK_OK || echo DB_CHECK_FAILED"),
+        container=constants.CONTAINER_NAMES["scheduler"],
     )
-    print(out)
     assert "DB_CHECK_OK" in out, f"Failed to connect to the DB: {out}"
 
 
-@pytest.mark.abort_on_fail
+# @pytest.mark.abort_on_fail
 def test_config_change_propagates_and_dags_reserialize(
     juju: jubilant.Juju,
 ):
     """Config changes in coordinator should propagate and allow DAG reserialize."""
-    coordinator_unit = f"{constants.COORDINATOR_APP}/0"
-    set_coordinator_config_value(juju, coordinator_unit, "load_examples", True)
+
+    set_coordinator_config_value(juju, f"{constants.COORDINATOR_APP}/0", "load_examples", True)
 
     # TODO: Update once the issue https://github.com/canonical/airflow-core-operators/issues/19 is resolved
-    for _, app in constants.CORE_CHARMS.items():
-        juju.cli(
-            "ssh",
-            "--container",
-            app.replace("-k8s", ""),
+    for component, app in constants.CORE_CHARMS.items():
+        juju.ssh(
             f"{app}/0",
             "pebble restart airflow",
+            container=constants.CONTAINER_NAMES[component],
         )
 
-    for _, app in constants.CORE_CHARMS.items():
-        juju.cli(
-            "ssh",
-            "--container",
-            app.replace("-k8s", ""),
+    for component, app in constants.CORE_CHARMS.items():
+        juju.ssh(
             f"{app}/0",
             "bash -lc " + shlex.quote("airflow dags reserialize"),
+            container=constants.CONTAINER_NAMES[component],
         )
 
     for component, app in constants.CORE_CHARMS.items():
@@ -118,47 +109,39 @@ def test_config_change_propagates_and_dags_reserialize(
             f"Expected load_examples=True in {app} config"
         )
 
-    scheduler_unit = f"{constants.CORE_CHARMS['scheduler']}/0"
-    scheduler_container = constants.CONTAINER_NAMES["scheduler"]
-    out = juju.cli(
-        "ssh",
-        "--container",
-        scheduler_container,
-        scheduler_unit,
+    out = juju.ssh(
+        f"{constants.CORE_CHARMS['scheduler']}/0",
         "bash -lc "
         + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
+        container=constants.CONTAINER_NAMES["scheduler"],
     )
     assert isinstance(json_from_airflow(out), list)
 
 
-@pytest.mark.abort_on_fail
+# @pytest.mark.abort_on_fail
 def test_scheduler_scale_and_resilience(
     juju: jubilant.Juju,
 ):
     """Scheduler should scale up and down while remaining healthy."""
-    scheduler_app = constants.CORE_CHARMS["scheduler"]
-    scheduler_container = constants.CONTAINER_NAMES["scheduler"]
+    
     dag_id = "latest_only_with_trigger"
 
     try:
-        juju.cli("scale-application", scheduler_app, str(3))
+        juju.add_unit(constants.CORE_CHARMS["scheduler"], num_units=2)
         juju.wait(
-            ready=lambda st: st.apps[scheduler_app].is_active
-            and len(st.apps[scheduler_app].units) == 3,
+            ready=lambda st: st.apps[constants.CORE_CHARMS["scheduler"]].is_active
+            and len(st.apps[constants.CORE_CHARMS["scheduler"]].units) == 3,
             timeout=15 * 60,
         )
 
-        scheduler_unit = f"{scheduler_app}/0"
-        juju.cli(
-            "ssh",
-            "--container",
-            scheduler_container,
-            scheduler_unit,
+        juju.ssh(
+            f"{constants.CORE_CHARMS['scheduler']}/0",
             "bash -lc " + shlex.quote(f"airflow dags unpause {dag_id}"),
+            container=constants.CONTAINER_NAMES["scheduler"],
         )
 
         status = juju.status()
-        for unit_name, unit_status in status.apps[scheduler_app].units.items():
+        for unit_name, unit_status in status.apps[constants.CORE_CHARMS["scheduler"]].units.items():
             assert unit_status.is_active, (
                 f"{unit_name} should be active, got {unit_status.workload_status.current}"
             )
@@ -171,29 +154,25 @@ def test_scheduler_scale_and_resilience(
             )
 
             run_id = f"scale-{unit_name.replace('/', '-')}-{int(time.time())}"
-            juju.cli(
-                "ssh",
-                "--container",
-                scheduler_container,
+            juju.ssh(
                 unit_name,
                 "bash -lc "
                 + shlex.quote(f"airflow dags trigger {dag_id} --run-id {run_id}"),
+                container=constants.CONTAINER_NAMES["scheduler"],
             )
 
             for attempt in Retrying(
                 stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True
             ):
                 with attempt:
-                    out = juju.cli(
-                        "ssh",
-                        "--container",
-                        scheduler_container,
-                        scheduler_unit,
+                    out = juju.ssh(
+                        f"{constants.CORE_CHARMS['scheduler']}/0",
                         "bash -lc "
                         + shlex.quote(
                             f"PYTHONWARNINGS=ignore NO_COLOR=1 CLICOLOR=0 TERM=dumb "
                             f"airflow dags list-runs {dag_id} --output json"
                         ),
+                        container=constants.CONTAINER_NAMES["scheduler"],
                     )
                     runs = json_from_airflow(out)
                     if not any(
@@ -206,9 +185,9 @@ def test_scheduler_scale_and_resilience(
                             f"DAG run {run_id} did not reach queued/running"
                         )
     finally:
-        juju.cli("scale-application", scheduler_app, "1")
+        juju.remove_unit(constants.CORE_CHARMS["scheduler"], num_units=2)
         juju.wait(
-            ready=lambda st: st.apps[scheduler_app].is_active
-            and len(st.apps[scheduler_app].units) == 1,
+            ready=lambda st: st.apps[constants.CORE_CHARMS["scheduler"]].is_active
+            and len(st.apps[constants.CORE_CHARMS["scheduler"]].units) == 1,
             timeout=15 * 60,
         )

@@ -5,7 +5,7 @@ set fallback
 default:
 	just --list
 
-pack-charms:
+pack-charms: clean-core-charms
 	#!/usr/bin/bash
 	for charm_dir in charms/*/; do
 		if [ -f "$charm_dir/charmcraft.yaml" ]; then
@@ -13,6 +13,9 @@ pack-charms:
 			cd "$charm_dir" && charmcraft pack && cd - > /dev/null
 		fi
 	done
+
+clean-core-charms:
+	find charms -maxdepth 2 -name "*.charm" -delete
 
 clean-charms:
 	find charms -name "*.charm" -delete
@@ -25,13 +28,14 @@ integration *args: pack-charms
 	export DAG_PROCESSOR_CHARM_PATH=$(ls -t charms/dag-processor/*.charm | head -n1)
 	export SCHEDULER_CHARM_PATH=$(ls -t charms/scheduler/*.charm | head -n1)
 	export TRIGGERER_CHARM_PATH=$(ls -t charms/triggerer/*.charm | head -n1)
+	export JUJU_MODEL=test
 	
 	uv sync --group integration
 	uv run tox -e integration -- ${pdb_options} {{args}}
 
 clean: clean-charms
 	#!/usr/bin/bash
-	juju models --format json 2>/dev/null | jq -r '.models[] | select(.name | startswith("jubilant-")) | .name' | xargs -r -I {} juju destroy-model --force --destroy-storage --no-prompt {}
+	juju destroy-model --force --destroy-storage --no-prompt "${JUJU_MODEL:-test}"
 
 lint:
 	uv sync --frozen --group lint
@@ -47,4 +51,4 @@ get-system-state:
 	echo "---"
 	juju models
 	echo "---"
-	juju status --format tabular
+	juju status --model "${JUJU_MODEL:-test}" --format tabular

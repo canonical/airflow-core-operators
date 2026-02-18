@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import logging
+import os
 import shlex
 import sys
 import time
@@ -27,6 +28,21 @@ EXPECTED_RELATIONS = [
 @pytest.fixture(scope="module")
 def juju(request: pytest.FixtureRequest):
     """Create a temporary Juju model for running tests."""
+    if "JUJU_MODEL" in os.environ:
+        juju = jubilant.Juju(wait_timeout=20 * 60)
+        juju.add_model(
+            os.environ["JUJU_MODEL"],
+            config={"update-status-hook-interval": "10s"},
+        )
+        yield juju
+
+        if request.session.testsfailed:
+            logger.info("Collecting Juju logs...")
+            time.sleep(0.5)
+            log = juju.debug_log(limit=1000)
+            print(log, end="", file=sys.stderr)
+
+        return
 
     with jubilant.temp_model(config={"update-status-hook-interval": "10s"}) as juju:
         juju.wait_timeout = 20 * 60
@@ -74,7 +90,7 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     )
 
     juju.deploy(constants.PGBOUNCER_APP, app=constants.PGBOUNCER_APP, trust=True)
-    
+
     juju.integrate(
         f"{constants.PGBOUNCER_APP}:backend-database",
         f"{constants.POSTGRES_APP}:database",
@@ -82,8 +98,9 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     juju.wait(
         lambda st: jubilant.all_active(st, constants.PGBOUNCER_APP),
         timeout=5 * 60,
+        successes=3,
+        delay=30,
     )
-
 
     juju.deploy(
         constants.COORDINATOR_APP,
@@ -99,12 +116,12 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     juju.integrate(
         f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database"
     )
-    juju.wait(
-        lambda st: jubilant.all_active(st, constants.POSTGRES_APP),
-        timeout=10 * 60,
-        successes=3,
-        delay=30,
-    )
+    # juju.wait(
+    #     lambda st: jubilant.all_active(st, constants.POSTGRES_APP),
+    #     timeout=10 * 60,
+    #     successes=3,
+    #     delay=30,
+    # )
 
     for _, app in constants.CORE_CHARMS.items():
         juju.integrate(
@@ -112,11 +129,8 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
             f"{app}:{constants.COORD_REL}",
         )
 
-    ensure_db_migrated(juju, "airflow-api-server-k8s")
-    juju.wait(
-        ready=lambda st: jubilant.all_active(st, *constants.ALL_APPS),
-        timeout=10 * 60,
-    )
+    assert ensure_db_migrated(juju, "api-server", "airflow-api-server-k8s")
+    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
 
 
 @pytest.fixture(autouse=True)
@@ -154,61 +168,45 @@ def invariant_checker(juju: jubilant.Juju):
         assert jubilant.all_active(juju.status())
 
 
-def file_exists(juju: jubilant.Juju, unit: str, container: str, path: str) -> bool:
-    """Check if file exists in container."""
-    output = juju.cli(
-        "ssh",
-        "--container",
-        container,
-        unit,
-        f"test -f {shlex.quote(path)} && echo OK || echo MISSING",
-    )
-    return "OK" in output
-
-
 def pebble_service_is_running(
     juju: jubilant.Juju,
     unit: str,
+    component: str,
     service_name: str,
 ) -> bool:
     """Return True if a Pebble service is active in a unit container."""
-    startup = get_pebble_service_startup(juju, unit, service_name)
-    current = get_pebble_service_current(juju, unit, service_name)
+    startup = get_pebble_service_status(juju, unit, component, service_name)["startup"]
+    current = get_pebble_service_status(juju, unit, component, service_name)["current"]
     return startup == "enabled" and current == "active"
 
 
-def get_pebble_service_startup(
+# def get_pebble_service_startup(
+#     juju: jubilant.Juju,
+#     unit: str,
+#     service_name: str,
+# ) -> str:
+#     """Return the Pebble service startup value for a unit."""
+#     return get_pebble_service_status(juju, unit, service_name)["startup"]
+
+
+# def get_pebble_service_current(
+#     juju: jubilant.Juju,
+#     unit: str,
+#     service_name: str,
+# ) -> str:
+#     """Return the Pebble service current value for a unit."""
+#     return get_pebble_service_status(juju, unit, service_name)["current"]
+
+
+def get_pebble_service_status(
     juju: jubilant.Juju,
-    unit: str,
-    service_name: str,
-) -> str:
-    """Return the Pebble service startup value for a unit."""
-    return _get_pebble_service_status(juju, unit, service_name)["startup"]
-
-
-def get_pebble_service_current(
-    juju: jubilant.Juju,
-    unit: str,
-    service_name: str,
-) -> str:
-    """Return the Pebble service current value for a unit."""
-    return _get_pebble_service_status(juju, unit, service_name)["current"]
-
-
-def _get_pebble_service_status(
-    juju: jubilant.Juju,
+    component: str,
     unit: str,
     service_name: str,
 ) -> dict[str, str]:
     app = unit.split("/")[0]
-    container = constants.CONTAINER_NAMES.get(app) or app.replace("-k8s", "")
-    services_text = juju.cli(
-        "ssh",
-        "--container",
-        container,
-        unit,
-        "pebble services || true",
-    )
+    container = constants.CONTAINER_NAMES[component]
+    services_text = juju.ssh(unit, "pebble services || true", container=container)
     lines = [line for line in services_text.splitlines() if line.strip()]
     for line in lines[1:]:
         parts = line.split()
@@ -224,14 +222,14 @@ def push_text_file(
     juju: jubilant.Juju,
     unit: str,
     container: str,
-    dst_path: str,
+    destination_path: str,
     content: str,
 ) -> None:
     """Push text content to a file inside a unit container."""
-    destination_path = Path(dst_path)
+    destination_path = Path(destination_path)
     destination_directory = destination_path.parent
     destination_directory_arg = shlex.quote(str(destination_directory))
-    destination_path_arg = shlex.quote(dst_path)
+    destination_path_arg = shlex.quote(str(destination_path))
 
     encoded_payload = base64.b64encode(content.encode("utf-8")).decode("ascii")
     encoded_payload_arg = shlex.quote(encoded_payload)
@@ -240,4 +238,4 @@ def push_text_file(
         f"mkdir -p {destination_directory_arg} "
         f"&& echo {encoded_payload_arg} | base64 -d > {destination_path_arg}"
     )
-    juju.cli("ssh", "--container", container, unit, command)
+    juju.ssh(unit, command, container=container)

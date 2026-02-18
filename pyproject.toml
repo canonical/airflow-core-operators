@@ -33,5 +33,4 @@ minversion = "6.0"
 addopts = "--tb=native --verbose --capture=no --log-cli-level=INFO"
 testpaths = ["tests/integration"]
 markers = [
-    "abort_on_fail: abort test run on first failure",
 ]

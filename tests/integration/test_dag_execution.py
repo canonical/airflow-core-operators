@@ -15,14 +15,12 @@ from tests.integration.conftest import (
 )
 
 
-@pytest.mark.abort_on_fail
+# @pytest.mark.abort_on_fail
 def test_dag_discovery_and_execution(
     juju: jubilant.Juju,
     deployed_stack,
 ):
-    """Injected DAG should be discovered and complete successfully."""
-    scheduler_unit = f"{constants.CORE_CHARMS['scheduler']}/0"
-    scheduler_container = constants.CONTAINER_NAMES["scheduler"]
+    """Injected DAG should be discovered and complete successfully."""    
 
     dag_content = Path(constants.FUNCTIONAL_DAG_TEMPLATE).read_text(encoding="utf-8")
     for component, app in constants.CORE_CHARMS.items():
@@ -36,17 +34,15 @@ def test_dag_discovery_and_execution(
             dag_content,
         )
 
-        juju.cli("ssh", "--container", container, unit, f"ls -l {constants.DAGS_FILE}")
+        juju.ssh(unit, f"ls -l {constants.DAGS_FILE}", container=container)
 
     for component, app in constants.CORE_CHARMS.items():
         unit = f"{app}/0"
         container = constants.CONTAINER_NAMES[component]
-        juju.cli(
-            "ssh",
-            "--container",
-            container,
+        juju.ssh(
             unit,
             "bash -lc " + shlex.quote("airflow dags reserialize"),
+            container=container,
         )
 
     juju.wait(jubilant.all_agents_idle, timeout=15 * 60)
@@ -57,13 +53,11 @@ def test_dag_discovery_and_execution(
         reraise=True,
     ):
         with attempt:
-            out = juju.cli(
-                "ssh",
-                "--container",
-                scheduler_container,
-                scheduler_unit,
+            out = juju.ssh(
+                f"{constants.CORE_CHARMS['scheduler']}/0",
                 "bash -lc "
                 + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
+                container=constants.CONTAINER_NAMES["scheduler"],
             )
 
             dags = json_from_airflow(out)
@@ -75,15 +69,13 @@ def test_dag_discovery_and_execution(
                 raise AssertionError("DAG not discovered yet")
 
     run_id = f"it-{int(time.time())}"
-    juju.cli(
-        "ssh",
-        "--container",
-        scheduler_container,
-        scheduler_unit,
+    juju.ssh(
+        f"{constants.CORE_CHARMS['scheduler']}/0",
         "bash -lc "
         + shlex.quote(
             f"airflow dags trigger {constants.FUNCTIONAL_DAG_ID} --run-id {run_id}"
         ),
+        container=constants.CONTAINER_NAMES["scheduler"],
     )
 
     queued_or_running = False
@@ -93,15 +85,13 @@ def test_dag_discovery_and_execution(
         reraise=True,
     ):
         with attempt:
-            out = juju.cli(
-                "ssh",
-                "--container",
-                scheduler_container,
-                scheduler_unit,
+            out = juju.ssh(
+                f"{constants.CORE_CHARMS['scheduler']}/0",
                 "bash -lc "
                 + shlex.quote(
                     f"PYTHONWARNINGS=ignore NO_COLOR=1 CLICOLOR=0 TERM=dumb airflow dags list-runs {constants.FUNCTIONAL_DAG_ID} --output json"
                 ),
+                container=constants.CONTAINER_NAMES["scheduler"],
             )
             runs = json_from_airflow(out)
             for run in runs if isinstance(runs, list) else []:
