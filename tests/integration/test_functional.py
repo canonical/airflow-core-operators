@@ -15,8 +15,6 @@ from tests.integration.helpers.airflow_helpers import (
 )
 import tests.integration.helpers.constants as constants
 
-
-# @pytest.mark.abort_on_fail
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_airflow_config_options_present_and_rewritten_on_relation_change(
     juju: jubilant.Juju,
@@ -42,7 +40,7 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
         f"{app}:{constants.COORD_REL}",
     )
 
-    # juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60)
 
     output = juju.ssh(
         target_unit,
@@ -56,14 +54,13 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
         f"{app}:{constants.COORD_REL}",
     )
 
-    juju.wait(jubilant.all_active, timeout=20 * 60)
+    juju.wait(jubilant.all_active, timeout=5 * 60)
 
     cfg = read_airflow_config(juju, target_unit, target_container)
     assert cfg.get("core", "executor") == "LocalExecutor"
     assert cfg.get("database", "sql_alchemy_conn").startswith("postgresql+psycopg2://")
 
 
-# @pytest.mark.abort_on_fail
 def test_database_connectivity_from_scheduler(
     juju: jubilant.Juju,
 ):
@@ -78,13 +75,14 @@ def test_database_connectivity_from_scheduler(
     assert "DB_CHECK_OK" in out, f"Failed to connect to the DB: {out}"
 
 
-# @pytest.mark.abort_on_fail
 def test_config_change_propagates_and_dags_reserialize(
     juju: jubilant.Juju,
 ):
     """Config changes in coordinator should propagate and allow DAG reserialize."""
 
-    set_coordinator_config_value(juju, f"{constants.COORDINATOR_APP}/0", "load_examples", True)
+    set_coordinator_config_value(
+        juju, f"{constants.COORDINATOR_APP}/0", "load_examples", True
+    )
 
     # TODO: Update once the issue https://github.com/canonical/airflow-core-operators/issues/19 is resolved
     for component, app in constants.CORE_CHARMS.items():
@@ -118,18 +116,17 @@ def test_config_change_propagates_and_dags_reserialize(
     assert isinstance(json_from_airflow(out), list)
 
 
-# @pytest.mark.abort_on_fail
 def test_scheduler_scale_and_resilience(
     juju: jubilant.Juju,
 ):
     """Scheduler should scale up and down while remaining healthy."""
-    
+
     dag_id = "latest_only_with_trigger"
 
     try:
         juju.add_unit(constants.CORE_CHARMS["scheduler"], num_units=2)
         juju.wait(
-            ready=lambda st: st.apps[constants.CORE_CHARMS["scheduler"]].is_active
+            ready=lambda st: jubilant.all_active(st)
             and len(st.apps[constants.CORE_CHARMS["scheduler"]].units) == 3,
             timeout=15 * 60,
         )
@@ -141,13 +138,16 @@ def test_scheduler_scale_and_resilience(
         )
 
         status = juju.status()
-        for unit_name, unit_status in status.apps[constants.CORE_CHARMS["scheduler"]].units.items():
+        for unit_name, unit_status in status.apps[
+            constants.CORE_CHARMS["scheduler"]
+        ].units.items():
             assert unit_status.is_active, (
                 f"{unit_name} should be active, got {unit_status.workload_status.current}"
             )
             assert pebble_service_is_running(
                 juju,
                 unit_name,
+                "scheduler",
                 constants.PEBBLE_SERVICE_NAME,
             ), (
                 f"{unit_name}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
@@ -187,7 +187,7 @@ def test_scheduler_scale_and_resilience(
     finally:
         juju.remove_unit(constants.CORE_CHARMS["scheduler"], num_units=2)
         juju.wait(
-            ready=lambda st: st.apps[constants.CORE_CHARMS["scheduler"]].is_active
+            ready=lambda st: jubilant.all_active(st)
             and len(st.apps[constants.CORE_CHARMS["scheduler"]].units) == 1,
-            timeout=15 * 60,
+            timeout=10 * 60,
         )

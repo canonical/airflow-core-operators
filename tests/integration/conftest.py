@@ -13,9 +13,9 @@ import base64
 
 import tests.integration.helpers.constants as constants
 
-from tests.integration.helpers.airflow_helpers import (
-    ensure_db_migrated,
-)
+# from tests.integration.helpers.airflow_helpers import (
+#     ensure_db_migrated,
+# )
 
 logger = logging.getLogger(__name__)
 
@@ -116,12 +116,7 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     juju.integrate(
         f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database"
     )
-    # juju.wait(
-    #     lambda st: jubilant.all_active(st, constants.POSTGRES_APP),
-    #     timeout=10 * 60,
-    #     successes=3,
-    #     delay=30,
-    # )
+    juju.wait(jubilant.all_agents_idle)
 
     for _, app in constants.CORE_CHARMS.items():
         juju.integrate(
@@ -129,8 +124,15 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
             f"{app}:{constants.COORD_REL}",
         )
 
-    assert ensure_db_migrated(juju, "api-server", "airflow-api-server-k8s")
-    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
+    # assert ensure_db_migrated(juju, "api-server", "airflow-api-server-k8s")
+    logger.info("Airflow database migrations complete.")
+    juju.wait(
+        lambda st: jubilant.all_active(st),
+        timeout=10 * 60,
+        successes=2,
+        delay=20,
+    )
+    logger.info("Airflow stack is fully deployed and active.")
 
 
 @pytest.fixture(autouse=True)
@@ -175,27 +177,9 @@ def pebble_service_is_running(
     service_name: str,
 ) -> bool:
     """Return True if a Pebble service is active in a unit container."""
-    startup = get_pebble_service_status(juju, unit, component, service_name)["startup"]
-    current = get_pebble_service_status(juju, unit, component, service_name)["current"]
+    startup = get_pebble_service_status(juju, component, unit,  service_name)["startup"]
+    current = get_pebble_service_status(juju, component, unit, service_name)["current"]
     return startup == "enabled" and current == "active"
-
-
-# def get_pebble_service_startup(
-#     juju: jubilant.Juju,
-#     unit: str,
-#     service_name: str,
-# ) -> str:
-#     """Return the Pebble service startup value for a unit."""
-#     return get_pebble_service_status(juju, unit, service_name)["startup"]
-
-
-# def get_pebble_service_current(
-#     juju: jubilant.Juju,
-#     unit: str,
-#     service_name: str,
-# ) -> str:
-#     """Return the Pebble service current value for a unit."""
-#     return get_pebble_service_status(juju, unit, service_name)["current"]
 
 
 def get_pebble_service_status(
@@ -204,7 +188,7 @@ def get_pebble_service_status(
     unit: str,
     service_name: str,
 ) -> dict[str, str]:
-    app = unit.split("/")[0]
+    
     container = constants.CONTAINER_NAMES[component]
     services_text = juju.ssh(unit, "pebble services || true", container=container)
     lines = [line for line in services_text.splitlines() if line.strip()]

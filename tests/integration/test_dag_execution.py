@@ -1,7 +1,6 @@
 """Integration tests covering DAG execution flow."""
 
 import time
-import pytest
 import jubilant
 import shlex
 import tenacity
@@ -15,12 +14,11 @@ from tests.integration.conftest import (
 )
 
 
-# @pytest.mark.abort_on_fail
 def test_dag_discovery_and_execution(
     juju: jubilant.Juju,
     deployed_stack,
 ):
-    """Injected DAG should be discovered and complete successfully."""    
+    """Injected DAG should be discovered and complete successfully."""
 
     dag_content = Path(constants.FUNCTIONAL_DAG_TEMPLATE).read_text(encoding="utf-8")
     for component, app in constants.CORE_CHARMS.items():

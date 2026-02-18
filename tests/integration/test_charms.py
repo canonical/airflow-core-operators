@@ -9,17 +9,16 @@ from tests.integration.conftest import (
     get_pebble_service_status,
     pebble_service_is_running,
 )
-from tests.integration.helpers.airflow_helpers import get_airflow_config_value
+from tests.integration.helpers.airflow_helpers import read_airflow_config
 import tests.integration.helpers.constants as constants
 
 
-# @pytest.mark.abort_on_fail
 def test_full_stack_goes_active_and_core_services_run(
     juju: jubilant.Juju,
     deployed_stack,
 ):
     """Full stack should go active and core services should be running."""
-    assert jubilant.wait(jubilant.all_active, timeout=10 * 60), (
+    assert juju.wait(jubilant.all_active, timeout=10 * 60), (
         "Not all apps became active in time"
     )
 
@@ -31,7 +30,6 @@ def test_full_stack_goes_active_and_core_services_run(
         )
 
 
-# @pytest.mark.abort_on_fail
 def test_pebble_services_and_config_exist(
     juju: jubilant.Juju,
 ):
@@ -50,27 +48,26 @@ def test_pebble_services_and_config_exist(
             f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
         )
 
-        assert pebble_service_is_running(juju, unit, component, constants.PEBBLE_SERVICE_NAME), (
-            f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
-        )
+        assert pebble_service_is_running(
+            juju, unit, component, constants.PEBBLE_SERVICE_NAME
+        ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
 
 
-# @pytest.mark.abort_on_fail
 def test_api_health_endpoint_if_available(
     juju: jubilant.Juju,
 ):
     """API server health endpoint should return healthy when available."""
-    api_unit = f"{constants.CORE_CHARMS['api-server']}/0"
+    
     service_host = (
         f"{constants.CORE_CHARMS['api-server']}-endpoints."
-        f"{juju.show_model().name}.svc.cluster.local:8080"
+        f"{juju.show_model().name.split('/')[1]}.svc.cluster.local:8080"
     )
 
     check_cmd = (
         "curl -s http://localhost:8080/api/v2/monitor/health; echo '---'; "
-        f"curl -s http://{service_host}/api/v2/monitor/health"
+        f"curl -s http://{service_host}/api/v2/monitor/health || true"
     )
-    out = juju.ssh(api_unit, "bash -lc " + shlex.quote(check_cmd))
+    out = juju.ssh(f"{constants.CORE_CHARMS['api-server']}/0", "bash -lc " + shlex.quote(check_cmd))
 
     parts = out.split("---", 1)
     if len(parts) != 2:
@@ -110,46 +107,12 @@ def test_airflow_config_cli_values(
     """Airflow CLI should return expected config values."""
     # TODO: Update the assertions related to dags and logs folder oncer the issue https://github.com/canonical/airflow-coordinator-k8s-operator/issues/16 is resolved
 
-    assert (
-        get_airflow_config_value(
-            juju,
-            component,
-            app,
-            "core",
-            "executor",
-        )
-        == "LocalExecutor"
-    )
-    assert (
-        get_airflow_config_value(
-            juju,
-            component,
-            app,
-            "api",
-            "port",
-        )
-        == "8080"
-    )
-    assert (
-        get_airflow_config_value(
-            juju,
-            component,
-            app,
-            "logging",
-            "base_log_folder",
-        )
-        == "logs"
-    )
-    assert (
-        get_airflow_config_value(
-            juju,
-            component,
-            app,
-            "core",
-            "dags_folder",
-        )
-        == "dags"
-    )
+    cfg = read_airflow_config(juju, f"{app}/0", constants.CONTAINER_NAMES[component])
+
+    assert cfg.get("core", "executor") == "LocalExecutor"
+    assert cfg.get("api", "port") == "8080"
+    assert cfg.get("logging", "base_log_folder") == "logs"
+    assert cfg.get("core", "dags_folder") == "dags"
 
 
 def test_charm_statuses_on_missing_relation(
@@ -192,7 +155,6 @@ def test_charm_statuses_on_missing_relation(
     )
 
 
-# @pytest.mark.abort_on_fail
 def test_core_charms_wait_when_database_unavailable(
     juju: jubilant.Juju,
 ):
@@ -212,9 +174,8 @@ def test_core_charms_wait_when_database_unavailable(
         timeout=15 * 60,
     )
 
-    st = juju.status()
     for component, app in constants.CORE_CHARMS.items():
-        app_status = st.apps[app]
+        app_status = juju.status().apps[app]
         assert app_status.is_waiting, (
             f"Expected {app} waiting, got {app_status.app_status.current}"
         )
@@ -225,18 +186,12 @@ def test_core_charms_wait_when_database_unavailable(
         ):
             with attempt:
                 if expected_state == "active":
-                    startup = get_pebble_service_status(
-                        juju, f"{app}/0", constants.PEBBLE_SERVICE_NAME
-                    )["startup"]
-                    current = get_pebble_service_status(
-                        juju, f"{app}/0", constants.PEBBLE_SERVICE_NAME
-                    )["current"]
-                    assert startup == "enabled" and current == "active", (
-                        f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active while waiting."
-                    )
+                    assert pebble_service_is_running(
+                        juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
+                    ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active while waiting."
                 else:
                     current = get_pebble_service_status(
-                        juju, f"{app}/0", constants.PEBBLE_SERVICE_NAME
+                        juju, component, f"{app}/0", constants.PEBBLE_SERVICE_NAME
                     )["current"]
                     assert current == "backoff", (
                         f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not in backoff while waiting."
@@ -245,7 +200,7 @@ def test_core_charms_wait_when_database_unavailable(
         f"{constants.PGBOUNCER_APP}:database",
         f"{constants.COORDINATOR_APP}:postgres",
     )
-    juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=3, delay=20)
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=3, delay=30)
 
     assert jubilant.all_active(juju.status()), (
         "Not all apps became active after database relation restored"
