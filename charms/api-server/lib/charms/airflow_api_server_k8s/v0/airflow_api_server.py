@@ -126,7 +126,7 @@ class AirflowAPIServerRequires(ops.Object):
 
     @property
     def api_server_host(self) -> typing.Optional[str]:
-        """Return API server (host, port) tuple."""
+        """Return API server host."""
         if not self._relation or not self._relation.app:
             return None
 
@@ -134,7 +134,7 @@ class AirflowAPIServerRequires(ops.Object):
 
     @property
     def api_server_port(self) -> typing.Optional[str]:
-        """Return API server (host, port) tuple."""
+        """Return API server port."""
         if not self._relation or not self._relation.app:
             return None
 
