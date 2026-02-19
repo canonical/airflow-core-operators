@@ -137,7 +137,7 @@ def test_scheduler_scale_and_resilience(
         juju.wait(
             ready=lambda st: jubilant.all_active(st)
             and len(st.apps[constants.CORE_CHARMS["scheduler"]].units) == 3,
-            timeout=5 * 60,
+            timeout=10 * 60,
         )
 
         juju.ssh(
@@ -171,7 +171,7 @@ def test_scheduler_scale_and_resilience(
             )
 
             for attempt in Retrying(
-                stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True
+                stop=stop_after_attempt(6), wait=wait_fixed(10), reraise=True
             ):
                 with attempt:
                     out = juju.ssh(
