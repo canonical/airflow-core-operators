@@ -6,6 +6,7 @@
 
 """Integration tests validating core charm behavior."""
 
+import json
 import pytest
 import jubilant
 import shlex
@@ -18,49 +19,46 @@ from tests.integration.conftest import (
 from tests.integration.helpers.airflow_helpers import read_airflow_config
 import tests.integration.helpers.constants as constants
 
-
-def test_full_stack_goes_active_and_core_services_run(
+@pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
+def test_core_services_run_after_full_stack_goes_active(
     juju: jubilant.Juju,
     deployed_stack,
+    component: str,
+    app: str,
 ):
-    """Full stack should go active and core services should be running."""
-    # assert juju.wait(jubilant.all_active, timeout=10 * 60), (
-    #     "Not all apps became active in time"
-    # )
+    """Core services should be running after deployment and relation of the full stack."""
 
-    for component, app in constants.CORE_CHARMS.items():
-        assert pebble_service_is_running(
-            juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
-        ), (
-            f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active after recovery."
-        )
+    assert pebble_service_is_running(
+        juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
+    ), (
+        f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
+    )
 
-
+@pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_pebble_services_and_config_exist(
     juju: jubilant.Juju,
+    component: str,
+    app: str,
 ):
     """Pebble services should be active and config should be present."""
 
-    for component, app in constants.CORE_CHARMS.items():
-
-        output = juju.ssh(
-            f"{app}/0",
-            f"test -f {shlex.quote(constants.AIRFLOW_CONFIG_PATH)} && echo OK || echo MISSING",
-            container=constants.CONTAINER_NAMES[component],
-        )
-        assert "OK" in output, (
-            f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
-        )
-
-        assert pebble_service_is_running(
-            juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
-        ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
+    output = juju.ssh(
+        f"{app}/0",
+        f"test -f {shlex.quote(constants.AIRFLOW_CONFIG_PATH)} && echo OK || echo MISSING",
+        container=constants.CONTAINER_NAMES[component],
+    )
+    assert "OK" in output, (
+        f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
+    )
+    assert pebble_service_is_running(
+        juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
+    ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
 
 
-def test_api_health_endpoint_if_available(
+def test_airflow_cluster_health_via_api_endpoint(
     juju: jubilant.Juju,
 ):
-    """API server health endpoint should return healthy when available."""
+    """Airflow API health endpoint should report all core components healthy."""
 
     service_host = (
         f"{constants.CORE_CHARMS['api-server']}-endpoints."
@@ -79,24 +77,13 @@ def test_api_health_endpoint_if_available(
     if len(parts) != 2:
         raise AssertionError(f"Unexpected API health output:\n{out}")
 
-    assert "unhealthy" not in parts[0], "API unhealthy from localhost"
-    assert "unhealthy" not in parts[1], "API unhealthy in cluster"
+    assert all(
+        v["status"] == "healthy" for v in json.loads(parts[0]).values()
+    ), f"API unhealthy from localhost:\n{parts[0]}"
 
-@pytest.mark.parametrize("component, job_type",constants.CORE_JOB_CHECKS)
-def test_core_job_health(
-    juju: jubilant.Juju,
-    component: str,
-    job_type: str,
-):
-    """Core jobs should report healthy status in their components."""
-
-    out = juju.ssh(
-        f"{constants.CORE_CHARMS[component]}/0",
-        "bash -lc "
-        + shlex.quote(f"airflow jobs check --job-type {job_type} || true"),
-        container=constants.CONTAINER_NAMES[component],
-    )
-    assert "Found one alive job" in out, f"{component} check did not pass:\n{out}"
+    assert all(
+        v["status"] == "healthy" for v in json.loads(parts[1]).values()
+    ), f"API unhealthy in cluster:\n{parts[1]}"
 
 
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))

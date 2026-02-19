@@ -52,11 +52,6 @@ CONTAINER_NAMES = {
     component: _get_container_name(component) for component, app in CORE_CHARMS.items()
 }
 
-CORE_JOB_CHECKS = [
-    ("triggerer", "TriggererJob"),
-    ("dag-processor", "DagProcessorJob"),
-    ("scheduler", "SchedulerJob"),
-]
 AIRFLOW_HOME = "/opt/airflow"
 POSTGRES_APP = "postgresql-k8s"
 PGBOUNCER_APP = "pgbouncer-k8s"

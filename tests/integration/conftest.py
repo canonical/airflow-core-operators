@@ -37,7 +37,6 @@ def juju(request: pytest.FixtureRequest):
             time.sleep(0.5)
             log = juju.debug_log(limit=1000)
             print(log, end="", file=sys.stderr)
-
         return
 
     with jubilant.temp_model(config={"update-status-hook-interval": "10s"}) as juju:
