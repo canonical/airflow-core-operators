@@ -1,3 +1,9 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+#
+# The integration tests use the Jubilant library. See https://documentation.ubuntu.com/jubilant/
+# To learn more about testing, see https://documentation.ubuntu.com/ops/latest/explanation/testing/
+
 """Helpers for Airflow CLI, config parsing, and test DAG templates."""
 
 import configparser
@@ -6,13 +12,6 @@ import shlex
 import jubilant
 
 import tests.integration.helpers.constants as constants
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_fixed,
-    retry_if_exception_type,
-    retry_if_result,
-)
 import logging
 
 
@@ -23,14 +22,9 @@ class ServiceNotReadyError(RuntimeError):
     """Raised when the Pebble service is not ready yet."""
 
 
-def clean_ansi(text: str) -> str:
-    """Strip ANSI escape sequences from CLI output."""
-    return constants.ANSI_RE.sub("", text)
-
-
 def json_from_airflow(out: str) -> list | dict:
     """Parse JSON output from Airflow CLI commands."""
-    clean = clean_ansi(out).strip()
+    clean = constants.ANSI_RE.sub("", out).strip()
     return json.loads(clean)
 
 
@@ -50,69 +44,6 @@ def read_airflow_config(
     parser = configparser.ConfigParser()
     parser.read_string(output)
     return parser
-
-
-def get_airflow_config_value(
-    juju: jubilant.Juju,
-    component: str,
-    app: str,
-    section: str,
-    key: str,
-) -> str:
-    """Return a config value from the Airflow CLI."""
-
-    cmd = f"airflow config get-value {section} {key}"
-    container = constants.CONTAINER_NAMES[component]
-    out = juju.ssh(
-        f"{app}/0",
-        "bash -lc " + shlex.quote(cmd),
-        container=container,
-    )
-    return clean_ansi(out).strip()
-
-
-# @retry(
-#     stop=stop_after_attempt(10),
-#     wait=wait_fixed(5),
-#     reraise=True,
-#     retry=retry_if_exception_type(ServiceNotReadyError)
-#     | retry_if_result(lambda result: result is False),
-# )
-# def ensure_db_migrated(juju: jubilant.Juju, component: str, app: str) -> bool:
-#     """Ensure the Airflow database migrations are fully applied."""
-#     from tests.integration.conftest import pebble_service_is_running
-#     container = constants.CONTAINER_NAMES[component]
-
-#     try:
-#         service_ready = pebble_service_is_running(
-#             juju,
-#             unit=f"{app}/0",
-#             component=component,
-#             service_name=constants.PEBBLE_SERVICE_NAME,
-#         )
-#     except Exception as exc:
-#         logger.info("Pebble service not ready yet, retrying...")
-#         raise ServiceNotReadyError(
-#             f"Failed checking Pebble services for {app}"
-#         ) from exc
-
-#     if not service_ready:
-#         logger.info("Pebble service not ready yet, retrying...")
-#         raise ServiceNotReadyError(
-#             f"Timed out waiting for '{constants.PEBBLE_SERVICE_NAME}' service in {app}"
-#         )
-
-#     cmd = "airflow db migrate; echo __EXIT:$?"
-#     out = juju.ssh(f"{app}/0", "bash -lc " + shlex.quote(cmd), container=container)
-#     exit_code = None
-#     for line in out.splitlines():
-#         if line.startswith("__EXIT:"):
-#             exit_code = line.split(":", 1)[1].strip()
-#             break
-#     success = exit_code == "0"
-#     if not success:
-#         logger.info("Airflow DB migration failed for %s: %s", app, out)
-#     return success
 
 
 def set_coordinator_config_value(

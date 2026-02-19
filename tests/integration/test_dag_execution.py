@@ -1,3 +1,9 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+#
+# The integration tests use the Jubilant library. See https://documentation.ubuntu.com/jubilant/
+# To learn more about testing, see https://documentation.ubuntu.com/ops/latest/explanation/testing/
+
 """Integration tests covering DAG execution flow."""
 
 import time

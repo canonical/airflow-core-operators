@@ -1,3 +1,9 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+#
+# The integration tests use the Jubilant library. See https://documentation.ubuntu.com/jubilant/
+# To learn more about testing, see https://documentation.ubuntu.com/ops/latest/explanation/testing/
+
 """Shared constants and helpers for integration tests."""
 
 import re
@@ -36,12 +42,21 @@ CORE_CHARMS = {
     "scheduler": "airflow-scheduler-k8s",
     "triggerer": "airflow-triggerer-k8s",
 }
+CORE_CHARMS_RESOURCES = {
+    component: {app.replace("-k8s","-image"): IMAGE} for component,app in CORE_CHARMS.items()
+}
 CORE_COMPONENTS = CORE_CHARMS.keys()
 CORE_APPS = CORE_CHARMS.values()
 
 CONTAINER_NAMES = {
     component: _get_container_name(component) for component, app in CORE_CHARMS.items()
 }
+
+CORE_JOB_CHECKS = [
+    ("triggerer", "TriggererJob"),
+    ("dag-processor", "DagProcessorJob"),
+    ("scheduler", "SchedulerJob"),
+]
 AIRFLOW_HOME = "/opt/airflow"
 POSTGRES_APP = "postgresql-k8s"
 PGBOUNCER_APP = "pgbouncer-k8s"
@@ -53,6 +68,12 @@ POSTGRES_CHANNEL = "14/stable"
 COORDINATOR_CHANNEL = "3.1/edge"
 
 COORD_REL = "airflow-coordinator"
+
+EXPECTED_RELATIONS = [
+    (COORDINATOR_APP, "postgres"),
+    *[(app, COORD_REL) for _, app in CORE_CHARMS.items()],
+]
+
 AIRFLOW_CONFIG_PATH = f"{AIRFLOW_HOME}/airflow.cfg"
 DEFAULT_DAGS_PATH = f"{AIRFLOW_HOME}/dags"
 

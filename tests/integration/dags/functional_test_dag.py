@@ -1,6 +1,12 @@
+# Copyright 2025 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+"""Minimal DAG for integration tests."""
+
+from datetime import datetime
+
 from airflow import DAG
 from airflow.operators.bash import BashOperator
-from datetime import datetime
 
 with DAG(
     dag_id="test_functional_dag",

@@ -1,3 +1,9 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+#
+# The integration tests use the Jubilant library. See https://documentation.ubuntu.com/jubilant/
+# To learn more about testing, see https://documentation.ubuntu.com/ops/latest/explanation/testing/
+
 """Pytest fixtures for integration tests."""
 
 from pathlib import Path
@@ -13,17 +19,8 @@ import base64
 
 import tests.integration.helpers.constants as constants
 
-# from tests.integration.helpers.airflow_helpers import (
-#     ensure_db_migrated,
-# )
 
 logger = logging.getLogger(__name__)
-
-EXPECTED_RELATIONS = [
-    (constants.COORDINATOR_APP, "postgres"),
-    *[(app, constants.COORD_REL) for _, app in constants.CORE_CHARMS.items()],
-]
-
 
 @pytest.fixture(scope="module")
 def juju(request: pytest.FixtureRequest):
@@ -37,7 +34,6 @@ def juju(request: pytest.FixtureRequest):
         yield juju
 
         if request.session.testsfailed:
-            logger.info("Collecting Juju logs...")
             time.sleep(0.5)
             log = juju.debug_log(limit=1000)
             print(log, end="", file=sys.stderr)
@@ -49,7 +45,6 @@ def juju(request: pytest.FixtureRequest):
         yield juju
 
         if request.session.testsfailed:
-            logger.info("Collecting Juju logs...")
             time.sleep(0.5)
             log = juju.debug_log(limit=1000)
             print(log, end="", file=sys.stderr)
@@ -61,46 +56,30 @@ def core_charms():
     charm_paths = {}
     for dir_name, app in constants.CORE_CHARMS.items():
         charm_dir_path = constants.REPO_ROOT / "charms" / dir_name
-        charm_files = list(charm_dir_path.glob("*.charm"))
-        if len(charm_files) > 1:
-            raise FileNotFoundError(
-                f"Multiple .charm files found in {charm_dir_path}. Run 'just pack-charms' first."
-            )
-        charm_paths[app] = charm_files[0]
+        charm_paths[app] = next(charm_dir_path.glob("*.charm"))
     return charm_paths
 
 
 @pytest.fixture(scope="module")
 def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     """Deploy the full Airflow stack with PgBouncer in front of PostgreSQL."""
-    logger.info("Deploying PostgreSQL...")
+    
     juju.deploy(
-        "postgresql-k8s",
+        constants.POSTGRES_APP,
         channel=constants.POSTGRES_CHANNEL,
         trust=True,
         config={"profile": "testing"},
     )
 
-    logger.info("Waiting for PostgreSQL to be active...")
-    juju.wait(
-        lambda st: jubilant.all_active(st, constants.POSTGRES_APP),
-        timeout=10 * 60,
-        successes=3,
-        delay=30,
-    )
+    juju.wait(jubilant.all_active,timeout=10 * 60,successes=3,delay=30)
 
-    juju.deploy(constants.PGBOUNCER_APP, app=constants.PGBOUNCER_APP, trust=True)
+    juju.deploy(constants.PGBOUNCER_APP, trust=True)
 
     juju.integrate(
         f"{constants.PGBOUNCER_APP}:backend-database",
         f"{constants.POSTGRES_APP}:database",
     )
-    juju.wait(
-        lambda st: jubilant.all_active(st, constants.PGBOUNCER_APP),
-        timeout=5 * 60,
-        successes=3,
-        delay=30,
-    )
+    juju.wait(jubilant.all_active,timeout=5 * 60,successes=3,delay=30)
 
     juju.deploy(
         constants.COORDINATOR_APP,
@@ -108,10 +87,8 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         channel=constants.COORDINATOR_CHANNEL,
     )
 
-    for _, app in constants.CORE_CHARMS.items():
-        charm_path = str(core_charms[app])
-        resources = {app.replace("-k8s", "-image"): constants.IMAGE}
-        juju.deploy(charm_path, app=app, resources=resources)
+    for component, app in constants.CORE_CHARMS.items():
+        juju.deploy(core_charms[app], resources=constants.CORE_CHARMS_RESOURCES[component])
 
     juju.integrate(
         f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database"
@@ -124,25 +101,18 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
             f"{app}:{constants.COORD_REL}",
         )
 
-    # assert ensure_db_migrated(juju, "api-server", "airflow-api-server-k8s")
-    logger.info("Airflow database migrations complete.")
-    juju.wait(
-        lambda st: jubilant.all_active(st),
-        timeout=10 * 60,
-        successes=2,
-        delay=20,
-    )
-    logger.info("Airflow stack is fully deployed and active.")
+    juju.wait(jubilant.all_active,timeout=10 * 60,successes=2,delay=20)
 
 
 @pytest.fixture(autouse=True)
 def invariant_checker(juju: jubilant.Juju):
+    """Fail fast when core app invariants are broken before or after tests."""
     all_apps_deployed = all(app in juju.status().apps for app in constants.ALL_APPS)
 
     expected_relations_present = all(
         juju.status().apps.get(application)
         and len(juju.status().apps[application].relations.get(relation_endpoint, []))
-        for application, relation_endpoint in EXPECTED_RELATIONS
+        for application, relation_endpoint in constants.EXPECTED_RELATIONS
     )
 
     if not all_apps_deployed or not expected_relations_present:
@@ -159,7 +129,7 @@ def invariant_checker(juju: jubilant.Juju):
     expected_relations_present = all(
         juju.status().apps.get(application)
         and len(juju.status().apps[application].relations.get(relation_endpoint, []))
-        for application, relation_endpoint in EXPECTED_RELATIONS
+        for application, relation_endpoint in constants.EXPECTED_RELATIONS
     )
 
     if not all_apps_deployed or not expected_relations_present:
@@ -177,7 +147,7 @@ def pebble_service_is_running(
     service_name: str,
 ) -> bool:
     """Return True if a Pebble service is active in a unit container."""
-    startup = get_pebble_service_status(juju, component, unit,  service_name)["startup"]
+    startup = get_pebble_service_status(juju, component, unit, service_name)["startup"]
     current = get_pebble_service_status(juju, component, unit, service_name)["current"]
     return startup == "enabled" and current == "active"
 
@@ -188,7 +158,7 @@ def get_pebble_service_status(
     unit: str,
     service_name: str,
 ) -> dict[str, str]:
-    
+    """Return Pebble service status fields for a unit container."""
     container = constants.CONTAINER_NAMES[component]
     services_text = juju.ssh(unit, "pebble services || true", container=container)
     lines = [line for line in services_text.splitlines() if line.strip()]

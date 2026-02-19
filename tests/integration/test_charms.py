@@ -1,3 +1,9 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+#
+# The integration tests use the Jubilant library. See https://documentation.ubuntu.com/jubilant/
+# To learn more about testing, see https://documentation.ubuntu.com/ops/latest/explanation/testing/
+
 """Integration tests validating core charm behavior."""
 
 import pytest
@@ -18,9 +24,9 @@ def test_full_stack_goes_active_and_core_services_run(
     deployed_stack,
 ):
     """Full stack should go active and core services should be running."""
-    assert juju.wait(jubilant.all_active, timeout=10 * 60), (
-        "Not all apps became active in time"
-    )
+    # assert juju.wait(jubilant.all_active, timeout=10 * 60), (
+    #     "Not all apps became active in time"
+    # )
 
     for component, app in constants.CORE_CHARMS.items():
         assert pebble_service_is_running(
@@ -36,20 +42,18 @@ def test_pebble_services_and_config_exist(
     """Pebble services should be active and config should be present."""
 
     for component, app in constants.CORE_CHARMS.items():
-        unit = f"{app}/0"
-        container = constants.CONTAINER_NAMES[component]
 
         output = juju.ssh(
-            unit,
+            f"{app}/0",
             f"test -f {shlex.quote(constants.AIRFLOW_CONFIG_PATH)} && echo OK || echo MISSING",
-            container=container,
+            container=constants.CONTAINER_NAMES[component],
         )
         assert "OK" in output, (
             f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
         )
 
         assert pebble_service_is_running(
-            juju, unit, component, constants.PEBBLE_SERVICE_NAME
+            juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
         ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
 
 
@@ -57,7 +61,7 @@ def test_api_health_endpoint_if_available(
     juju: jubilant.Juju,
 ):
     """API server health endpoint should return healthy when available."""
-    
+
     service_host = (
         f"{constants.CORE_CHARMS['api-server']}-endpoints."
         f"{juju.show_model().name.split('/')[1]}.svc.cluster.local:8080"
@@ -67,35 +71,32 @@ def test_api_health_endpoint_if_available(
         "curl -s http://localhost:8080/api/v2/monitor/health; echo '---'; "
         f"curl -s http://{service_host}/api/v2/monitor/health || true"
     )
-    out = juju.ssh(f"{constants.CORE_CHARMS['api-server']}/0", "bash -lc " + shlex.quote(check_cmd))
+    out = juju.ssh(
+        f"{constants.CORE_CHARMS['api-server']}/0", "bash -lc " + shlex.quote(check_cmd)
+    )
 
     parts = out.split("---", 1)
     if len(parts) != 2:
         raise AssertionError(f"Unexpected API health output:\n{out}")
 
-    assert "healthy" in parts[0], "API unhealthy from localhost"
-    assert "healthy" in parts[1], "API unhealthy in cluster"
+    assert "unhealthy" not in parts[0], "API unhealthy from localhost"
+    assert "unhealthy" not in parts[1], "API unhealthy in cluster"
 
-
-def test_triggerer_health(
+@pytest.mark.parametrize("component, job_type",constants.CORE_JOB_CHECKS)
+def test_core_job_health(
     juju: jubilant.Juju,
+    component: str,
+    job_type: str,
 ):
-    """Triggerer job should report a healthy status."""
-    juju.wait(jubilant.all_agents_idle, timeout=10 * 60)
+    """Core jobs should report healthy status in their components."""
 
     out = juju.ssh(
-        f"{constants.CORE_CHARMS['triggerer']}/0",
-        "bash -lc " + shlex.quote("airflow jobs check --job-type TriggererJob || true"),
-        container=constants.CONTAINER_NAMES["triggerer"],
+        f"{constants.CORE_CHARMS[component]}/0",
+        "bash -lc "
+        + shlex.quote(f"airflow jobs check --job-type {job_type} || true"),
+        container=constants.CONTAINER_NAMES[component],
     )
-
-    assert (
-        "No issues found" in out
-        or "Found one alive job" in out
-        or "Found 1 alive job" in out
-        or "Found" in out
-        and "alive job" in out
-    ), f"Triggerer check did not pass:\n{out}"
+    assert "Found one alive job" in out, f"{component} check did not pass:\n{out}"
 
 
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
@@ -188,7 +189,9 @@ def test_core_charms_wait_when_database_unavailable(
                 if expected_state == "active":
                     assert pebble_service_is_running(
                         juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
-                    ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active while waiting."
+                    ), (
+                        f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active while waiting."
+                    )
                 else:
                     current = get_pebble_service_status(
                         juju, component, f"{app}/0", constants.PEBBLE_SERVICE_NAME

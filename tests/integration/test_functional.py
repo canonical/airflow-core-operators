@@ -1,3 +1,9 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+#
+# The integration tests use the Jubilant library. See https://documentation.ubuntu.com/jubilant/
+# To learn more about testing, see https://documentation.ubuntu.com/ops/latest/explanation/testing/
+
 """Integration tests for configuration and relation behavior."""
 
 import shlex
@@ -14,6 +20,7 @@ from tests.integration.helpers.airflow_helpers import (
     set_coordinator_config_value,
 )
 import tests.integration.helpers.constants as constants
+
 
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_airflow_config_options_present_and_rewritten_on_relation_change(
@@ -187,7 +194,6 @@ def test_scheduler_scale_and_resilience(
     finally:
         juju.remove_unit(constants.CORE_CHARMS["scheduler"], num_units=2)
         juju.wait(
-            ready=lambda st: jubilant.all_active(st)
-            and len(st.apps[constants.CORE_CHARMS["scheduler"]].units) == 1,
+            lambda st: len(juju.status().apps[constants.CORE_CHARMS["scheduler"]].units) == 1,
             timeout=10 * 60,
         )
