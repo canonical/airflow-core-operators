@@ -8,7 +8,6 @@
 
 import shlex
 import time
-import logging
 import pytest
 import jubilant
 from tenacity import Retrying, stop_after_attempt, wait_fixed
@@ -21,8 +20,6 @@ from tests.integration.helpers.airflow_helpers import (
 )
 import tests.integration.helpers.constants as constants
 
-
-logger = logging.getLogger(__name__)
 
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_airflow_config_options_present_and_rewritten_on_relation_change(
@@ -190,9 +187,6 @@ def test_scheduler_scale_and_resilience(
                         for run in runs
                         if isinstance(runs, list)
                     ):
-                        logger.info(
-                            f"DAG run {run_id} not queued/running yet. Retrying...\nOutput was:\n{out}"
-                        )
                         raise AssertionError(
                             f"DAG run {run_id} did not reach queued/running"
                         )
