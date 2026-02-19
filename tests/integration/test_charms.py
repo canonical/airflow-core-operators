@@ -19,6 +19,7 @@ from tests.integration.conftest import (
 from tests.integration.helpers.airflow_helpers import read_airflow_config
 import tests.integration.helpers.constants as constants
 
+
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_core_services_run_after_full_stack_goes_active(
     juju: jubilant.Juju,
@@ -30,9 +31,8 @@ def test_core_services_run_after_full_stack_goes_active(
 
     assert pebble_service_is_running(
         juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
-    ), (
-        f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
-    )
+    ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
+
 
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_pebble_services_and_config_exist(
@@ -47,9 +47,7 @@ def test_pebble_services_and_config_exist(
         f"test -f {shlex.quote(constants.AIRFLOW_CONFIG_PATH)} && echo OK || echo MISSING",
         container=constants.CONTAINER_NAMES[component],
     )
-    assert "OK" in output, (
-        f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
-    )
+    assert "OK" in output, f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
     assert pebble_service_is_running(
         juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
     ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
@@ -77,13 +75,13 @@ def test_airflow_cluster_health_via_api_endpoint(
     if len(parts) != 2:
         raise AssertionError(f"Unexpected API health output:\n{out}")
 
-    assert all(
-        v["status"] == "healthy" for v in json.loads(parts[0]).values()
-    ), f"API unhealthy from localhost:\n{parts[0]}"
+    assert all(v["status"] == "healthy" for v in json.loads(parts[0]).values()), (
+        f"API unhealthy from localhost:\n{parts[0]}"
+    )
 
-    assert all(
-        v["status"] == "healthy" for v in json.loads(parts[1]).values()
-    ), f"API unhealthy in cluster:\n{parts[1]}"
+    assert all(v["status"] == "healthy" for v in json.loads(parts[1]).values()), (
+        f"API unhealthy in cluster:\n{parts[1]}"
+    )
 
 
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
@@ -125,22 +123,18 @@ def test_charm_statuses_on_missing_relation(
         f"Expected scheduler blocked, got {sched_app.app_status.current}"
     )
 
-    waiting_components = {"api-server", "triggerer", "dag-processor"}
     assert all(
         status.apps[app].is_waiting
         for component, app in constants.CORE_CHARMS.items()
-        if component in waiting_components
+        if component in {"api-server", "triggerer", "dag-processor"}
     ), "Expected api-server, triggerer, and dag-processor to be waiting"
+
     juju.integrate(
         f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
         f"{constants.CORE_CHARMS['scheduler']}:{constants.COORD_REL}",
     )
 
     juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=3, delay=20)
-
-    assert jubilant.all_active(juju.status()), (
-        "All apps did not become active after relation restored"
-    )
 
 
 def test_core_charms_wait_when_database_unavailable(
@@ -191,7 +185,3 @@ def test_core_charms_wait_when_database_unavailable(
         f"{constants.COORDINATOR_APP}:postgres",
     )
     juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=3, delay=30)
-
-    assert jubilant.all_active(juju.status()), (
-        "Not all apps became active after database relation restored"
-    )

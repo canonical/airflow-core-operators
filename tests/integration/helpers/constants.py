@@ -43,7 +43,8 @@ CORE_CHARMS = {
     "triggerer": "airflow-triggerer-k8s",
 }
 CORE_CHARMS_RESOURCES = {
-    component: {app.replace("-k8s","-image"): IMAGE} for component,app in CORE_CHARMS.items()
+    component: {app.replace("-k8s", "-image"): IMAGE}
+    for component, app in CORE_CHARMS.items()
 }
 CORE_COMPONENTS = CORE_CHARMS.keys()
 CORE_APPS = CORE_CHARMS.values()

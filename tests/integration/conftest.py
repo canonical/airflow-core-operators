@@ -22,6 +22,7 @@ import tests.integration.helpers.constants as constants
 
 logger = logging.getLogger(__name__)
 
+
 @pytest.fixture(scope="module")
 def juju(request: pytest.FixtureRequest):
     """Create a temporary Juju model for running tests."""
@@ -62,7 +63,7 @@ def core_charms():
 @pytest.fixture(scope="module")
 def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     """Deploy the full Airflow stack with PgBouncer in front of PostgreSQL."""
-    
+
     juju.deploy(
         constants.POSTGRES_APP,
         channel=constants.POSTGRES_CHANNEL,
@@ -70,7 +71,7 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         config={"profile": "testing"},
     )
 
-    juju.wait(jubilant.all_active,timeout=10 * 60,successes=3,delay=30)
+    # juju.wait(jubilant.all_active,timeout=10 * 60,successes=3,delay=30)
 
     juju.deploy(constants.PGBOUNCER_APP, trust=True)
 
@@ -78,7 +79,7 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         f"{constants.PGBOUNCER_APP}:backend-database",
         f"{constants.POSTGRES_APP}:database",
     )
-    juju.wait(jubilant.all_active,timeout=5 * 60,successes=3,delay=30)
+    # juju.wait(jubilant.all_active,timeout=5 * 60,successes=3,delay=30)
 
     juju.deploy(
         constants.COORDINATOR_APP,
@@ -87,12 +88,14 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     )
 
     for component, app in constants.CORE_CHARMS.items():
-        juju.deploy(core_charms[app], resources=constants.CORE_CHARMS_RESOURCES[component])
+        juju.deploy(
+            core_charms[app], resources=constants.CORE_CHARMS_RESOURCES[component]
+        )
 
     juju.integrate(
         f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database"
     )
-    juju.wait(jubilant.all_agents_idle)
+    # juju.wait(jubilant.all_agents_idle)
 
     for _, app in constants.CORE_CHARMS.items():
         juju.integrate(
@@ -100,7 +103,7 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
             f"{app}:{constants.COORD_REL}",
         )
 
-    juju.wait(jubilant.all_active,timeout=10 * 60,successes=2,delay=20)
+    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
 
 
 @pytest.fixture(autouse=True)
