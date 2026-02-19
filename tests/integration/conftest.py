@@ -71,15 +71,12 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         config={"profile": "testing"},
     )
 
-    # juju.wait(jubilant.all_active,timeout=10 * 60,successes=3,delay=30)
-
     juju.deploy(constants.PGBOUNCER_APP, trust=True)
 
     juju.integrate(
         f"{constants.PGBOUNCER_APP}:backend-database",
         f"{constants.POSTGRES_APP}:database",
     )
-    # juju.wait(jubilant.all_active,timeout=5 * 60,successes=3,delay=30)
 
     juju.deploy(
         constants.COORDINATOR_APP,
@@ -95,7 +92,6 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     juju.integrate(
         f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database"
     )
-    # juju.wait(jubilant.all_agents_idle)
 
     for _, app in constants.CORE_CHARMS.items():
         juju.integrate(
