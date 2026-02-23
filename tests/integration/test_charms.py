@@ -21,22 +21,9 @@ import tests.integration.helpers.constants as constants
 
 
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
-def test_core_services_run_after_full_stack_goes_active(
-    juju: jubilant.Juju,
-    deployed_stack,
-    component: str,
-    app: str,
-):
-    """Core services should be running after deployment and relation of the full stack."""
-
-    assert pebble_service_is_running(
-        juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
-    ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
-
-
-@pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_pebble_services_and_config_exist(
     juju: jubilant.Juju,
+    deployed_stack,
     component: str,
     app: str,
 ):
@@ -60,7 +47,7 @@ def test_airflow_cluster_health_via_api_endpoint(
 
     service_host = (
         f"{constants.CORE_CHARMS['api-server']}-endpoints."
-        f"{juju.show_model().name.split('/')[1]}.svc.cluster.local:8080"
+        f"{juju.model}.svc.cluster.local:8080"
     )
 
     check_cmd = (

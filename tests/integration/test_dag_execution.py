@@ -13,7 +13,6 @@ import tenacity
 from tests.integration.helpers.airflow_helpers import (
     json_from_airflow,
 )
-from pathlib import Path
 import tests.integration.helpers.constants as constants
 from tests.integration.conftest import (
     push_text_file,
@@ -26,7 +25,6 @@ def test_dag_discovery_and_execution(
 ):
     """Injected DAG should be discovered and complete successfully."""
 
-    dag_content = Path(constants.FUNCTIONAL_DAG_TEMPLATE).read_text(encoding="utf-8")
     for component, app in constants.CORE_CHARMS.items():
         unit = f"{app}/0"
         container = constants.CONTAINER_NAMES[component]
@@ -35,7 +33,7 @@ def test_dag_discovery_and_execution(
             unit,
             container,
             constants.DAGS_FILE,
-            dag_content,
+            str(constants.FUNCTIONAL_DAG_TEMPLATE),
         )
 
         juju.ssh(unit, f"ls -l {constants.DAGS_FILE}", container=container)

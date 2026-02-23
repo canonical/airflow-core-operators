@@ -119,7 +119,9 @@ def test_config_change_propagates_and_dags_reserialize(
         + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
         container=constants.CONTAINER_NAMES["scheduler"],
     )
-    assert isinstance(json_from_airflow(out), list)
+    assert (
+        isinstance(json_from_airflow(out), list) and len(json_from_airflow(out)) > 0
+    ), f"Expected DAG list output, got: {out}"
 
 
 def test_scheduler_scale_and_resilience(

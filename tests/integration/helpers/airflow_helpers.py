@@ -8,11 +8,10 @@
 
 import configparser
 import json
-import shlex
-import jubilant
-
-import tests.integration.helpers.constants as constants
 import logging
+import tempfile
+import jubilant
+import tests.integration.helpers.constants as constants
 
 
 logger = logging.getLogger(__name__)
@@ -36,13 +35,12 @@ def read_airflow_config(
 ) -> configparser.ConfigParser:
     """Read the rendered airflow.cfg from the workload container."""
 
-    output = juju.ssh(
-        unit,
-        "bash -lc " + shlex.quote(f"cat {path}"),
-        container=container,
-    )
     parser = configparser.ConfigParser()
-    parser.read_string(output)
+
+    with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as f:
+        juju.scp(f"{unit}:{path}", f.name, container=container)
+        f.seek(0)
+        parser.read_file(f)  # returns None; parser is mutated
     return parser
 
 
@@ -60,5 +58,25 @@ def set_coordinator_config_value(
     rendered_value = (
         "True" if value is True else "False" if value is False else str(value)
     )
-    cmd = f"sed -i 's/^{key} = .*/{key} = {rendered_value}/' {template_path}"
-    juju.ssh(coordinator_unit, "bash -lc " + shlex.quote(cmd))
+    with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as source_file:
+        juju.scp(f"{coordinator_unit}:{template_path}", source_file.name)
+        source_file.seek(0)
+        lines = source_file.readlines()
+
+    updated_lines: list[str] = []
+    replaced = False
+    for line in lines:
+        if line.startswith(f"{key} = "):
+            line_ending = "\n" if line.endswith("\n") else ""
+            updated_lines.append(f"{key} = {rendered_value}{line_ending}")
+            replaced = True
+        else:
+            updated_lines.append(line)
+
+    if not replaced:
+        logger.warning("Key '%s' not found in template %s", key, template_path)
+
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as updated_file:
+        updated_file.writelines(updated_lines)
+        updated_file.flush()
+        juju.scp(updated_file.name, f"{coordinator_unit}:{template_path}")

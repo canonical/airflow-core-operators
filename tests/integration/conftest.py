@@ -9,13 +9,11 @@
 from pathlib import Path
 import logging
 import os
-import shlex
 import sys
 import time
 
 import jubilant
 import pytest
-import base64
 
 import tests.integration.helpers.constants as constants
 
@@ -145,9 +143,13 @@ def pebble_service_is_running(
     service_name: str,
 ) -> bool:
     """Return True if a Pebble service is active in a unit container."""
-    startup = get_pebble_service_status(juju, component, unit, service_name)["startup"]
-    current = get_pebble_service_status(juju, component, unit, service_name)["current"]
-    return startup == "enabled" and current == "active"
+    pebble_service_status = get_pebble_service_status(
+        juju, component, unit, service_name
+    )
+    return (
+        pebble_service_status["startup"] == "enabled"
+        and pebble_service_status["current"] == "active"
+    )
 
 
 def get_pebble_service_status(
@@ -175,19 +177,25 @@ def push_text_file(
     unit: str,
     container: str,
     destination_path: str,
-    content: str,
+    local_path: str,
 ) -> None:
     """Push text content to a file inside a unit container."""
-    destination_path = Path(destination_path)
-    destination_directory = destination_path.parent
-    destination_directory_arg = shlex.quote(str(destination_directory))
-    destination_path_arg = shlex.quote(str(destination_path))
+    local_path = Path(local_path)
 
-    encoded_payload = base64.b64encode(content.encode("utf-8")).decode("ascii")
-    encoded_payload_arg = shlex.quote(encoded_payload)
+    if not local_path.exists():
+        raise FileNotFoundError(local_path)
 
-    command = "bash -lc " + shlex.quote(
-        f"mkdir -p {destination_directory_arg} "
-        f"&& echo {encoded_payload_arg} | base64 -d > {destination_path_arg}"
+    # Ensure destination directory exists
+    destination_directory = Path(destination_path).parent
+    juju.ssh(
+        unit,
+        f"mkdir -p {destination_directory}",
+        container=container,
     )
-    juju.ssh(unit, command, container=container)
+
+    # Copy the file
+    juju.scp(
+        str(local_path),
+        f"{unit}:{destination_path}",
+        container=container,
+    )
