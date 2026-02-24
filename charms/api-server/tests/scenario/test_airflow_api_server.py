@@ -123,6 +123,7 @@ def requires_application_state(airflow_api_server_requires_relation):
 
 class TestAirflowAPIServerProvides:
     def test_missing_relation(self, provides_application_context, provides_application_state):
+        """Confirms that the _reconcile handler not run if the relation is missing."""
         provides_application_state = dataclasses.replace(provides_application_state, relations=[])
 
         state_out = provides_application_context.run(
@@ -131,6 +132,7 @@ class TestAirflowAPIServerProvides:
         assert state_out.unit_status == ops.ActiveStatus()
 
     def test_non_leader_noop(self, provides_application_context, provides_application_state):
+        """Confirms the _reconcile handler no-ops if it is not the leader unit."""
         provides_application_state = dataclasses.replace(provides_application_state, leader=False)
 
         state_out = provides_application_context.run(
@@ -148,6 +150,7 @@ class TestAirflowAPIServerProvides:
     def test_successful_set_of_data(
         self, provides_application_context, provides_application_state
     ):
+        """Ensures proper write of data in the relation databag."""
         state_out = provides_application_context.run(
             provides_application_context.on.start(), provides_application_state
         )
@@ -167,11 +170,13 @@ class TestAirflowAPIServerProvides:
 
 class TestAirflowAPIServerRequires:
     def get_juju_log_line(self, log_level: str, event: ops.EventBase):
+        """Composes specific expected logs from mock charms."""
         return ops.testing.JujuLogLine(
             level=log_level, message=f"§Requirer reacting to event: {event}"
         )
 
     def test_missing_relation(self, requires_application_context, requires_application_state):
+        """Confirms proper null data when relation is missing."""
         requires_application_state = dataclasses.replace(requires_application_state, relations=[])
 
         with requires_application_context(
@@ -194,6 +199,7 @@ class TestAirflowAPIServerRequires:
         requires_application_state,
         airflow_api_server_requires_relation,
     ):
+        """Confirms proper data access when first available and subsequently updated."""
         with requires_application_context(
             requires_application_context.on.relation_changed(airflow_api_server_requires_relation),
             requires_application_state,
@@ -236,6 +242,7 @@ class TestAirflowAPIServerRequires:
         requires_application_state,
         airflow_api_server_requires_relation,
     ):
+        """Confirms null data access when relation broken."""
         with requires_application_context(
             requires_application_context.on.relation_broken(airflow_api_server_requires_relation),
             requires_application_state,
