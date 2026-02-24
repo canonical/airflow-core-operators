@@ -9,6 +9,7 @@
 import configparser
 import json
 import logging
+import shlex
 import tempfile
 import jubilant
 import tests.integration.helpers.constants as constants
@@ -58,25 +59,5 @@ def set_coordinator_config_value(
     rendered_value = (
         "True" if value is True else "False" if value is False else str(value)
     )
-    with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8") as source_file:
-        juju.scp(f"{coordinator_unit}:{template_path}", source_file.name)
-        source_file.seek(0)
-        lines = source_file.readlines()
-
-    updated_lines: list[str] = []
-    replaced = False
-    for line in lines:
-        if line.startswith(f"{key} = "):
-            line_ending = "\n" if line.endswith("\n") else ""
-            updated_lines.append(f"{key} = {rendered_value}{line_ending}")
-            replaced = True
-        else:
-            updated_lines.append(line)
-
-    if not replaced:
-        logger.warning("Key '%s' not found in template %s", key, template_path)
-
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as updated_file:
-        updated_file.writelines(updated_lines)
-        updated_file.flush()
-        juju.scp(updated_file.name, f"{coordinator_unit}:{template_path}")
+    cmd = f"sed -i 's/^{key} = .*/{key} = {rendered_value}/' {template_path}"
+    juju.ssh(coordinator_unit, "bash -lc " + shlex.quote(cmd))
