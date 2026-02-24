@@ -133,7 +133,7 @@ def write_airflow_config(
     config_path: str,
     config_template: str,
     sensitive_data: dict[str, str],
-) -> None:
+) -> bool:
     """Render and write the Airflow config to a container.
 
     This utility function can be used by both the coordinator charm (for db migrations)
@@ -145,6 +145,9 @@ def write_airflow_config(
         config_template: The Jinja2 template string for the Airflow config.
         sensitive_data: Dictionary of sensitive values to render in the template.
 
+    Returns:
+        bool: True if the file content changed and was written, else False.
+
     Raises:
         RuntimeError: If unable to connect to the container or write the config.
     """
@@ -154,6 +157,12 @@ def write_airflow_config(
     try:
         config = jinja2.Environment().from_string(config_template).render(**sensitive_data)
 
+        if container.exists(config_path):
+            current_config = container.pull(config_path).read()
+            if current_config == config:
+                logger.info(f"Airflow config at {config_path} is unchanged; skipping write")
+                return False
+
         container.push(
             config_path,
             config,
@@ -162,6 +171,7 @@ def write_airflow_config(
             make_dirs=True,
         )
         logger.info(f"Successfully wrote Airflow config to {config_path}")
+        return True
     except Exception as e:
         raise RuntimeError(f"Failed to write Airflow config: {e}") from e
 
@@ -818,11 +828,11 @@ class AirflowCoordinatorRequires(ops.Object):
             ]
         )
 
-    def write_airflow_config(self, config_path: str) -> None:
+    def write_airflow_config(self, config_path: str) -> bool:
         """Render the Airflow config in the provided path in the workload container."""
         provider_content = self._requirer_handler.provider_content
 
-        write_airflow_config(
+        return write_airflow_config(
             self._workload_container,
             config_path,
             provider_content.config_template,

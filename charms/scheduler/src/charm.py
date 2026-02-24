@@ -113,10 +113,13 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 "Missing airflow-coordinator relation", ops.BlockedStatus
             )
 
-    def _write_airflow_config(self, config_path) -> None:
+    def _write_airflow_config(self, config_path) -> bool:
         """Write the airflow configuration file inside the workload container given a path.
 
         This method checks if the configuration can be written; otherwise raises.
+
+        Returns:
+            bool: True when config existed previously and changed content.
 
         Raises:
             ExitWithStatusError: if the configuration cannot be written or if
@@ -127,8 +130,9 @@ class AirflowSchedulerCharm(ops.CharmBase):
         if not self.config_requires.can_write_airflow_config:
             raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
 
+        config_exists = self._container.exists(config_path)
         try:
-            self.config_requires.write_airflow_config(config_path=config_path)
+            config_changed = self.config_requires.write_airflow_config(config_path=config_path)
         except (ops.pebble.ConnectionError, ops.pebble.Error) as e:
             # TODO: is BlockedStatus the best status here? I don't think there's
             # too much a human operator can actually do to resolve the issue.
@@ -139,8 +143,9 @@ class AirflowSchedulerCharm(ops.CharmBase):
             raise ExitWithStatusError(
                 "Failed to write config to workload container", ops.BlockedStatus
             ) from e
+        return config_exists and config_changed
 
-    def _add_layer_and_replan(self) -> None:
+    def _add_layer_and_replan(self, restart_service: bool = False) -> None:
         """Add the Pebble layer and replan.
 
         The service will start automatically since startup is enabled.
@@ -154,7 +159,9 @@ class AirflowSchedulerCharm(ops.CharmBase):
 
         try:
             self._container.replan()
-        except ops.pebble.ChangeError as e:
+            if restart_service:
+                self._container.restart(constants.SERVICE_NAME)
+        except (ops.pebble.ChangeError, ops.pebble.APIError) as e:
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
@@ -165,10 +172,10 @@ class AirflowSchedulerCharm(ops.CharmBase):
         try:
             self._check_container_can_connect()
             self._check_required_relation_and_act()
-            self._write_airflow_config(
+            restart_service = self._write_airflow_config(
                 config_path=constants.AIRFLOW_CONFIG_PATH,
             )
-            self._add_layer_and_replan()
+            self._add_layer_and_replan(restart_service=restart_service)
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return

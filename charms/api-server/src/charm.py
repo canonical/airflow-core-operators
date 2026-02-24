@@ -94,15 +94,16 @@ class AirflowApiServerCharm(ops.CharmBase):
                 ops.BlockedStatus,
             )
 
-    def _write_airflow_config(self, config_path: str) -> None:
-        """Write configuration files to the workload."""
+    def _write_airflow_config(self, config_path: str) -> bool:
+        """Write configuration files to the workload and return if config existed and changed."""
         if not self._config_requires.can_write_airflow_config:
             raise ExitWithStatusError(
                 "Waiting for relation data from coordinator",
                 ops.WaitingStatus,
             )
+        config_exists = self._container.exists(config_path)
         try:
-            self._config_requires.write_airflow_config(config_path=config_path)
+            config_changed = self._config_requires.write_airflow_config(config_path=config_path)
         except (
             ops.pebble.ConnectionError,
             ops.pebble.Error,
@@ -116,6 +117,7 @@ class AirflowApiServerCharm(ops.CharmBase):
                 "Failed to write config file to workload container",
                 ops.BlockedStatus,
             )
+        return config_exists and config_changed
 
     @property
     def _api_server_layer(self) -> ops.pebble.LayerDict:
@@ -132,7 +134,7 @@ class AirflowApiServerCharm(ops.CharmBase):
         }
         return layer
 
-    def _add_layer_and_replan(self) -> None:
+    def _add_layer_and_replan(self, restart_service: bool = False) -> None:
         """Add the Pebble layer and replan the services.
 
         The service starts automatically after replanning as startup is enabled.
@@ -143,8 +145,10 @@ class AirflowApiServerCharm(ops.CharmBase):
         self._container.add_layer("api-server-base", self._api_server_layer, combine=True)
         try:
             self._container.replan()
+            if restart_service:
+                self._container.restart(constants.SERVICE_NAME)
 
-        except ops.pebble.ChangeError:
+        except (ops.pebble.ChangeError, ops.pebble.APIError):
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
@@ -155,8 +159,8 @@ class AirflowApiServerCharm(ops.CharmBase):
         try:
             self._check_pebble_connection()
             self._check_required_relations()
-            self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
-            self._add_layer_and_replan()
+            restart_service = self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
+            self._add_layer_and_replan(restart_service=restart_service)
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return

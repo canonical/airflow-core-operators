@@ -170,8 +170,9 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
+        unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=False),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires, "write_airflow_config", return_value=None
+            AirflowCoordinatorRequires, "write_airflow_config", return_value=False
         ),
         unittest.mock.patch("ops.model.Container.replan", autospec=True) as replan_mock,
     ):
@@ -185,6 +186,56 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
     assert "airflow" in plan.services
     assert plan.services["airflow"].command == "airflow scheduler"
     assert plan.services["airflow"].startup == "enabled"
+
+
+def test_restart_when_existing_config_changes(context, state, container, scheduler_relation):
+    """Restart service when existing config content changes."""
+    state_in = dataclasses.replace(state, relations=[scheduler_relation])
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=True),
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires,
+            "write_airflow_config",
+            return_value=True,
+        ),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock,
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    restart_mock.assert_called_once()
+
+
+def test_no_restart_when_config_created_first_time(
+    context, state, container, scheduler_relation
+):
+    """Do not restart when airflow.cfg is first created."""
+    state_in = dataclasses.replace(state, relations=[scheduler_relation])
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=False),
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires,
+            "write_airflow_config",
+            return_value=True,
+        ),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock,
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    restart_mock.assert_not_called()
 
 
 def test_stop_service_pebble_api_error_scenario(context, state, container):
