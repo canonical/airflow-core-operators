@@ -99,6 +99,8 @@ jobs:
       matrix: ${{ fromJSON(needs.discover-integration-tasks.outputs.matrix) }}
     if: ${{ needs.discover-integration-tasks.outputs.matrix != '{"include":[]}' }}
     steps:
+      - name: Maximise GH runner space
+        uses: jlumbroso/free-disk-space@v1.3.1
       - name: Checkout
         uses: actions/checkout@v5
 
@@ -113,9 +115,8 @@ jobs:
           sudo rm -rf /run/containerd || true
 
           sudo snap install concierge --classic
-          sudo snap install just --classic
 
-          sudo -E concierge prepare -p k8s --extra-snaps=astral-uv
+          sudo -E concierge prepare -p k8s --extra-snaps=astral-uv,just
 
           mkdir -p ~/.kube
           sudo k8s kubectl config view --raw > ~/.kube/config
@@ -123,4 +124,7 @@ jobs:
           uv tool install tox
 
       - name: Run integration test file
-        run: uv tool run tox -e integration -- ${{ matrix.test_file }}
+        run: just integration ${{ matrix.test_file }}
+
+      - name: Get system state
+        run: just get-system-state
