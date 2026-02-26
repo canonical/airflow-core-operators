@@ -140,6 +140,35 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 "Failed to write config to workload container", ops.BlockedStatus
             ) from e
 
+    def _write_kubernetes_executor_pod_spec(
+        self, filepath: str = constants.AIRFLOW_POD_TEMPLATE_FILE_PATH
+    ) -> None:
+        """Write the K8s executor pod spec to the workload container if available.
+
+        This is a no-op when the KubernetesExecutor is not configured (i.e. when
+        no pod spec has been shared by the coordinator).
+
+        Args:
+            filepath: Path inside the workload container where the pod spec will
+                be written. Defaults to AIRFLOW_HOME/pod_templates/worker_pod_template.yaml.
+
+        Raises:
+            ExitWithStatusError: if the write operation fails.
+        """
+        if not self.config_requires.can_write_kubernetes_executor_pod_spec:
+            return
+
+        try:
+            self.config_requires.write_kubernetes_executor_pod_spec(filepath=filepath)
+        except (ops.pebble.ConnectionError, ops.pebble.Error) as e:
+            raise ExitWithStatusError(
+                "Failed to write pod spec: Pebble connection error", ops.BlockedStatus
+            ) from e
+        except Exception as e:
+            raise ExitWithStatusError(
+                "Failed to write pod spec to workload container", ops.BlockedStatus
+            ) from e
+
     def _add_layer_and_replan(self) -> None:
         """Add the Pebble layer and replan.
 
@@ -168,6 +197,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
             self._write_airflow_config(
                 config_path=constants.AIRFLOW_CONFIG_PATH,
             )
+            self._write_kubernetes_executor_pod_spec()
             self._add_layer_and_replan()
         except ExitWithStatusError as e:
             self.unit.status = e.status
