@@ -144,7 +144,44 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 "Failed to write config to workload container", ops.BlockedStatus
             ) from e
 
-    def _add_layer_and_replan(self, restart_service: bool = False) -> None:
+    def _write_kubernetes_executor_pod_spec(
+        self, filepath: str = constants.AIRFLOW_POD_TEMPLATE_FILE_PATH
+    ) -> None:
+        """Write the K8s executor pod spec to the workload container if available.
+
+        This is a no-op when the KubernetesExecutor is not configured (i.e. when
+        no pod spec has been shared by the coordinator).
+
+        Args:
+            filepath: Path inside the workload container where the pod spec will
+                be written. Defaults to AIRFLOW_HOME/pod_templates/worker_pod_template.yaml.
+
+        Raises:
+            ExitWithStatusError: if the write operation fails.
+        """
+        if not self.config_requires.can_write_kubernetes_executor_pod_spec:
+            if self._container.exists(filepath):
+                logger.info("Pod spec no longer in databag, removing %s", filepath)
+                self._container.remove_path(filepath, recursive=False)
+            return
+
+        try:
+            self.config_requires.write_kubernetes_executor_pod_spec(
+                filepath=filepath,
+                user=constants.WORKLOAD_USER,
+                group=constants.WORKLOAD_GROUP,
+            )
+        except (ops.pebble.ConnectionError, ops.pebble.Error) as e:
+            raise ExitWithStatusError(
+                "Failed to write pod spec: Pebble connection error", ops.BlockedStatus
+            ) from e
+        except Exception as e:
+            logger.exception("Failed to write pod spec to workload container")
+            raise ExitWithStatusError(
+                f"Failed to write pod spec to workload container: {e}", ops.BlockedStatus
+            ) from e
+
+    def _add_layer_and_replan(self) -> None:
         """Add the Pebble layer and replan.
 
         The service will start automatically since startup is enabled.
@@ -176,6 +213,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
         try:
             self._check_container_can_connect()
             self._check_required_relation_and_act()
+            self._write_kubernetes_executor_pod_spec()
             if not self.config_requires.can_write_airflow_config:
                 raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
             restart_service = self.config_requires.airflow_config_needs_update(

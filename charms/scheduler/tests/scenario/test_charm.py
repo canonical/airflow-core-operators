@@ -248,6 +248,178 @@ def test_no_restart_when_config_unchanged(context, state, container, scheduler_r
     restart_mock.assert_not_called()
 
 
+def test_pod_spec_no_op_when_not_available_scenario(context, state, container, scheduler_relation):
+    """Test that when pod spec is not in databag and file doesn't exist, it's a no-op."""
+    state_in = dataclasses.replace(state, relations=[scheduler_relation])
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_kubernetes_executor_pod_spec",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=False,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires, "write_kubernetes_executor_pod_spec"
+        ) as write_pod_spec_mock,
+        unittest.mock.patch(
+            "ops.model.Container.exists", autospec=True, return_value=False
+        ),
+        unittest.mock.patch("ops.model.Container.replan", autospec=True),
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    write_pod_spec_mock.assert_not_called()
+
+
+def test_pod_spec_removed_when_not_in_databag_scenario(
+    context, state, container, scheduler_relation
+):
+    """Test that a stale pod spec file is removed when pod spec is no longer in databag."""
+    state_in = dataclasses.replace(state, relations=[scheduler_relation])
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_kubernetes_executor_pod_spec",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=False,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires, "write_kubernetes_executor_pod_spec"
+        ) as write_pod_spec_mock,
+        unittest.mock.patch(
+            "ops.model.Container.exists", autospec=True, return_value=True
+        ),
+        unittest.mock.patch(
+            "ops.model.Container.remove_path", autospec=True
+        ) as remove_mock,
+        unittest.mock.patch("ops.model.Container.replan", autospec=True),
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    write_pod_spec_mock.assert_not_called()
+    remove_mock.assert_called_once()
+    call_args = remove_mock.call_args
+    assert call_args.kwargs.get("recursive") is False
+
+
+def test_pod_spec_written_successfully_scenario(context, state, container, scheduler_relation):
+    """Test that pod spec is written when available, and charm reaches ActiveStatus."""
+    state_in = dataclasses.replace(state, relations=[scheduler_relation])
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_kubernetes_executor_pod_spec",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires, "write_kubernetes_executor_pod_spec"
+        ) as write_pod_spec_mock,
+        unittest.mock.patch("ops.model.Container.replan", autospec=True),
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    write_pod_spec_mock.assert_called_once_with(
+        filepath=constants.AIRFLOW_POD_TEMPLATE_FILE_PATH,
+        user=constants.WORKLOAD_USER,
+        group=constants.WORKLOAD_GROUP,
+    )
+
+
+def test_pod_spec_write_pebble_error_scenario(context, state, container, scheduler_relation):
+    """Test BlockedStatus when writing pod spec fails due to Pebble error."""
+    state_in = dataclasses.replace(state, relations=[scheduler_relation])
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_kubernetes_executor_pod_spec",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "write_kubernetes_executor_pod_spec",
+            side_effect=ops.pebble.ConnectionError("Connection failed"),
+        ),
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.BlockedStatus(
+        "Failed to write pod spec: Pebble connection error"
+    )
+
+
+def test_pod_spec_write_generic_error_scenario(context, state, container, scheduler_relation):
+    """Test BlockedStatus when writing pod spec fails with generic exception."""
+    state_in = dataclasses.replace(state, relations=[scheduler_relation])
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_kubernetes_executor_pod_spec",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "write_kubernetes_executor_pod_spec",
+            side_effect=RuntimeError("Unexpected error"),
+        ),
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.BlockedStatus(
+        "Failed to write pod spec to workload container: Unexpected error"
+    )
+
+
 def test_stop_service_pebble_api_error_scenario(context, state, container):
     """Test BlockedStatus when stopping service fails with Pebble API error."""
     state_in = dataclasses.replace(state, relations=[])
