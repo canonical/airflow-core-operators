@@ -139,6 +139,11 @@ def test_failed_airflow_config_write_generic_scenario(
 def test_replan_failure_scenario(context, state, container, scheduler_relation):
     """Test BlockedStatus when Pebble replan fails."""
     state_in = dataclasses.replace(state, relations=[scheduler_relation])
+    fake_change = unittest.mock.Mock()
+    fake_change.id = "1"
+    fake_change.kind = "replan"
+    fake_change.summary = "replan failed"
+    fake_change.tasks = []
     with (
         unittest.mock.patch.object(
             AirflowCoordinatorRequires,
@@ -150,7 +155,8 @@ def test_replan_failure_scenario(context, state, container, scheduler_relation):
             AirflowCoordinatorRequires, "write_airflow_config", return_value=None
         ),
         unittest.mock.patch(
-            "ops.model.Container.replan", side_effect=ops.pebble.ChangeError("x", "y")
+            "ops.model.Container.replan",
+            side_effect=ops.pebble.ChangeError(err="x", change=fake_change),
         ),
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
