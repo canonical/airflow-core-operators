@@ -128,7 +128,14 @@ class AirflowDagProcessorCharm(ops.CharmBase):
             if restart_service:
                 self._container.restart(constants.SERVICE_NAME)
 
-        except (ops.pebble.ChangeError, ops.pebble.APIError):
+        except ops.pebble.ChangeError as e:
+            logger.exception("Pebble replan failed for dag-processor service: %s", e)
+            raise ExitWithStatusError(
+                "Failed to replan Pebble services",
+                ops.BlockedStatus,
+            )
+        except ops.pebble.APIError as e:
+            logger.exception("Pebble restart failed for dag-processor service: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,

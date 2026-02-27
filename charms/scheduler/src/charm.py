@@ -161,7 +161,14 @@ class AirflowSchedulerCharm(ops.CharmBase):
             self._container.replan()
             if restart_service:
                 self._container.restart(constants.SERVICE_NAME)
-        except (ops.pebble.ChangeError, ops.pebble.APIError) as e:
+        except ops.pebble.ChangeError as e:
+            logger.exception("Pebble replan failed for scheduler service: %s", e)
+            raise ExitWithStatusError(
+                "Failed to replan Pebble services",
+                ops.BlockedStatus,
+            ) from e
+        except ops.pebble.APIError as e:
+            logger.exception("Pebble restart failed for scheduler service: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
