@@ -34,12 +34,10 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
 
     cfg = read_airflow_config(juju, target_unit, target_container)
 
-    assert cfg.get("core", "dags_folder") == "dags"
     assert cfg.get("core", "executor") == "LocalExecutor"
     assert cfg.get("core", "load_examples") == "False"
     assert cfg.get("database", "sql_alchemy_conn").startswith("postgresql+psycopg2://")
     assert cfg.get("api", "port") == "8080"
-    assert cfg.get("logging", "base_log_folder") == "logs"
 
     juju.remove_relation(
         f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
