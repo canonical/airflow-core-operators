@@ -61,6 +61,8 @@ class AirflowSchedulerCharm(ops.CharmBase):
                     "summary": "The airflow scheduler service.",
                     "command": "airflow scheduler",
                     "startup": "enabled",
+                    "user": constants.WORKLOAD_USER,
+                    "group": constants.WORKLOAD_GROUP,
                 }
             }
         }

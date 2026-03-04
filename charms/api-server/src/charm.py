@@ -106,6 +106,8 @@ class AirflowApiServerCharm(ops.CharmBase):
                     "summary": "A service that runs the api-server workload.",
                     "command": "airflow api-server",
                     "startup": "enabled",
+                    "user": constants.WORKLOAD_USER,
+                    "group": constants.WORKLOAD_GROUP,
                 }
             }
         }

@@ -107,6 +107,8 @@ class AirflowTriggererCharm(ops.CharmBase):
                     "summary": "A service that runs the triggerer workload.",
                     "command": "airflow triggerer",
                     "startup": "enabled",
+                    "user": constants.WORKLOAD_USER,
+                    "group": constants.WORKLOAD_GROUP,
                 }
             }
         }
