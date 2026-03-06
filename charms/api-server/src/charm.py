@@ -49,9 +49,21 @@ class AirflowApiServerCharm(ops.CharmBase):
         self._api_server_provides = AirflowAPIServerProvides(
             self,
             constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT,
-            f"{self.app.name}-endpoints.{self.model.name}.svc.cluster.local",
-            "8080",
+            self._airflow_api_server_host,
+            str(self._airflow_api_server_port),
         )
+
+    @property
+    def _airflow_api_server_host(self) -> str:
+        """Airflow API Server hostname."""
+        # Hard-coded, but subject to change with addition of features like
+        # ingress or configurable options of the type of K8s service for the application
+        return f"{self.app.name}-endpoints.{self.model.name}.svc.cluster.local"
+
+    @property
+    def _airflow_api_server_port(self) -> int:
+        """Airflow API Server port."""
+        return 8080
 
     def _stop_service_and_remove_config(self) -> None:
         try:
