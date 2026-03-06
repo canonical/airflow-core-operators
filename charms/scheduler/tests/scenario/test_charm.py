@@ -9,6 +9,9 @@ from charms.airflow_coordinator_k8s.v0.airflow_coordinator import (
     AirflowCoordinatorRequires,
 )
 
+import constants
+
+
 
 def test_pebble_connection_failure_scenario(
     context, state, container, scheduler_relation
@@ -180,11 +183,13 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
     assert state_out.unit_status == ops.ActiveStatus()
     replan_mock.assert_called_once()
 
-    out_container = state_out.get_container("airflow-scheduler")
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
     plan = out_container.layers["scheduler-base"]
-    assert "airflow" in plan.services
-    assert plan.services["airflow"].command == "airflow scheduler"
-    assert plan.services["airflow"].startup == "enabled"
+    assert constants.SERVICE_NAME in plan.services
+    assert plan.services[constants.SERVICE_NAME].command == "airflow scheduler"
+    assert plan.services[constants.SERVICE_NAME].startup == "enabled"
+    assert plan.services[constants.SERVICE_NAME].user == constants.WORKLOAD_USER
+    assert plan.services[constants.SERVICE_NAME].group == constants.WORKLOAD_GROUP
 
 
 def test_stop_service_pebble_api_error_scenario(context, state, container):

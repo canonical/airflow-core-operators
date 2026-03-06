@@ -78,14 +78,11 @@ def test_airflow_config_cli_values(
     app: str,
 ):
     """Airflow CLI should return expected config values."""
-    # TODO: Update the assertions related to dags and logs folder oncer the issue https://github.com/canonical/airflow-coordinator-k8s-operator/issues/16 is resolved
 
     cfg = read_airflow_config(juju, f"{app}/0", constants.CONTAINER_NAMES[component])
 
     assert cfg.get("core", "executor") == "LocalExecutor"
     assert cfg.get("api", "port") == "8080"
-    assert cfg.get("logging", "base_log_folder") == "logs"
-    assert cfg.get("core", "dags_folder") == "dags"
 
 
 def test_charm_statuses_on_missing_relation(

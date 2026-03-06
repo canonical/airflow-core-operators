@@ -157,8 +157,8 @@ def write_airflow_config(
         container.push(
             config_path,
             config,
-            user="root",
-            group="root",
+            user="ubuntu",
+            group="ubuntu",
             make_dirs=True,
         )
         logger.info(f"Successfully wrote Airflow config to {config_path}")
@@ -810,7 +810,8 @@ class AirflowCoordinatorRequires(ops.Object):
             return False
 
         return all(
-            condition for condition in [
+            condition
+            for condition in [
                 self._ready,
                 self._requirer_handler.provider_content,
                 self._requirer_handler.provider_content.config_template,
@@ -819,7 +820,13 @@ class AirflowCoordinatorRequires(ops.Object):
         )
 
     def write_airflow_config(self, config_path: str) -> None:
-        """Render the Airflow config in the provided path in the workload container."""
+        """Render the Airflow config in the provided path in the workload container.
+
+        This also ensures AIRFLOW_HOME has correct ownership before writing,
+        since the rock ships /opt/airflow owned by root.
+        """
+        self._setup_workload_permissions()
+
         provider_content = self._requirer_handler.provider_content
 
         write_airflow_config(
@@ -828,6 +835,17 @@ class AirflowCoordinatorRequires(ops.Object):
             provider_content.config_template,
             json.loads(provider_content.sensitive_data),
         )
+
+    def _setup_workload_permissions(self) -> None:
+        """Recursively chown AIRFLOW_HOME to the workload user.
+
+        The rock image ships /opt/airflow owned by root. The workload
+        services run as ubuntu and need write access for logs, config,
+        and other runtime data.
+        """
+        self._workload_container.exec(
+            ["chown", "-R", "ubuntu:ubuntu", "/opt/airflow"]
+        ).wait()
 
     @property
     def can_write_kubernetes_executor_pod_spec(self) -> bool:
@@ -856,8 +874,8 @@ class AirflowCoordinatorRequires(ops.Object):
         self._workload_container.push(
             filepath,
             k8s_executor_pod_spec,
-            user="root",
-            group="root",
+            user="ubuntu",
+            group="ubuntu",
             make_dirs=True,
         )
 
