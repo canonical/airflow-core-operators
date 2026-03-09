@@ -7,6 +7,7 @@
 import logging
 
 import ops
+from charms.airflow_api_server_k8s.v0.airflow_api_server import AirflowAPIServerProvides
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
 
 import constants
@@ -27,6 +28,7 @@ class ExitWithStatusError(Exception):
         """Return the Juju unit status represented by this exception."""
         return self.status_type(self.msg)
 
+
 class AirflowApiServerCharm(ops.CharmBase):
     """Charm the Airflow API Server."""
 
@@ -38,11 +40,30 @@ class AirflowApiServerCharm(ops.CharmBase):
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
         self._config_requires = AirflowCoordinatorRequires(
             charm=self,
-            relation_name=constants.AIRFLOW_COORDINATOR_RELATION_NAME,
+            relation_name=constants.AIRFLOW_COORDINATOR_RELATION_ENDPOINT,
             component=constants.AIRFLOW_COMPONENT,
             workload_container=self._container,
             callback=self._reconcile,
         )
+
+        self._api_server_provides = AirflowAPIServerProvides(
+            self,
+            constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT,
+            self._airflow_api_server_host,
+            str(self._airflow_api_server_port),
+        )
+
+    @property
+    def _airflow_api_server_host(self) -> str:
+        """Airflow API Server hostname."""
+        # Hard-coded, but subject to change with addition of features like
+        # ingress or configurable options of the type of K8s service for the application
+        return f"{self.app.name}-endpoints.{self.model.name}.svc.cluster.local"
+
+    @property
+    def _airflow_api_server_port(self) -> int:
+        """Airflow API Server port."""
+        return 8080
 
     def _stop_service_and_remove_config(self) -> None:
         try:
@@ -66,7 +87,7 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _check_required_relations(self) -> None:
         """Check if required relations are established."""
-        if not self.model.get_relation(constants.AIRFLOW_COORDINATOR_RELATION_NAME):
+        if not self.model.get_relation(constants.AIRFLOW_COORDINATOR_RELATION_ENDPOINT):
             self._stop_service_and_remove_config()
             raise ExitWithStatusError(
                 "Missing airflow-coordinator relation",
