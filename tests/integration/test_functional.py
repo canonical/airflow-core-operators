@@ -93,7 +93,8 @@ def test_config_change_propagates_and_dags_reserialize(
             "pebble restart airflow",
             container=constants.CONTAINER_NAMES[component]
         )
-
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60)
+    
     for component, app in constants.CORE_CHARMS.items():
         config = read_airflow_config(
             juju, f"{app}/0", constants.CONTAINER_NAMES[component]
