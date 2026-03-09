@@ -125,15 +125,27 @@ def test_config_change_propagates_and_dags_reserialize(
             f"Expected load_examples=True in {app} config"
         )
 
-    out = juju.ssh(
-        f"{constants.CORE_CHARMS['scheduler']}/0",
-        "bash -lc "
-        + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
-        container=constants.CONTAINER_NAMES["scheduler"],
-    )
-    assert (
-        isinstance(json_from_airflow(out), list) and len(json_from_airflow(out)) > 0
-    ), f"Expected DAG list output, got: {out}"
+    for attempt in Retrying(
+        stop=stop_after_attempt(6),
+        wait=wait_fixed(5),
+        reraise=True,
+    ):
+        with attempt:
+            out = juju.ssh(
+                f"{constants.CORE_CHARMS['scheduler']}/0",
+                "bash -lc "
+                + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
+                container=constants.CONTAINER_NAMES["scheduler"],
+            )
+            dags = json_from_airflow(out)
+            if not any(
+                d.get("dag_id") == constants.FUNCTIONAL_DAG_ID
+                for d in dags
+                if isinstance(d, dict)
+            ):
+                raise AssertionError(
+                    f"Expected DAG {constants.FUNCTIONAL_DAG_ID} to be discovered, got: {out}"
+                )
 
 
 def test_scheduler_scale_and_resilience(
