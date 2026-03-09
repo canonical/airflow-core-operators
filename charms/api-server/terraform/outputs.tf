@@ -3,7 +3,9 @@ output "application" {
 }
 
 output "provides" {
-  value = {}
+  value = {
+    airflow_api_server = "airflow-api-server"
+  }
 }
 
 output "requires" {
