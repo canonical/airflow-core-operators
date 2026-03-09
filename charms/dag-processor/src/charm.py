@@ -103,12 +103,10 @@ class AirflowDagProcessorCharm(ops.CharmBase):
         layer: ops.pebble.LayerDict = {
             "services": {
                 constants.SERVICE_NAME: {
-                    "override": "replace",
+                    "override": "merge",
                     "summary": "A service that runs the dag-processor workload.",
                     "command": "airflow dag-processor",
                     "startup": "enabled",
-                    "user": constants.WORKLOAD_USER,
-                    "group": constants.WORKLOAD_GROUP,
                 }
             }
         }

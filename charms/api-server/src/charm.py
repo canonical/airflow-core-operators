@@ -102,12 +102,10 @@ class AirflowApiServerCharm(ops.CharmBase):
         layer: ops.pebble.LayerDict = {
             "services": {
                 constants.SERVICE_NAME: {
-                    "override": "replace",
+                    "override": "merge",
                     "summary": "A service that runs the api-server workload.",
                     "command": "airflow api-server",
                     "startup": "enabled",
-                    "user": constants.WORKLOAD_USER,
-                    "group": constants.WORKLOAD_GROUP,
                 }
             }
         }
