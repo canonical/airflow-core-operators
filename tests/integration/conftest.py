@@ -91,6 +91,11 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database"
     )
 
+    juju.integrate(
+        f"{constants.COORDINATOR_APP}:airflow-api-server",
+        f"{constants.CORE_CHARMS['api-server']}:airflow-api-server",
+    )
+
     for _, app in constants.CORE_CHARMS.items():
         juju.integrate(
             f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
