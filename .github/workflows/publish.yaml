@@ -98,11 +98,15 @@ jobs:
           charmcraft-channel: 3.x/stable
 
   publish-libs:
-    name: Publish charm libs
+    name: Publish charm libs (${{ matrix.charm_path }})
     needs: [get-modified-charms, run-tests]
     if: ${{ needs.get-modified-charms.outputs.paths != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        charm_path: ${{ fromJSON(needs.get-modified-charms.outputs.paths) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -112,4 +116,5 @@ jobs:
         with:
           credentials: ${{ secrets.CHARMHUB_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          charm-path: ${{ matrix.charm_path }}
           charmcraft-channel: 3.x/stable
