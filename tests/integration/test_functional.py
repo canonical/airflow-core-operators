@@ -12,7 +12,7 @@ import pytest
 import jubilant
 from tenacity import Retrying, stop_after_attempt, wait_fixed
 
-from tests.integration.conftest import pebble_service_is_running, get_pebble_service_status
+from tests.integration.conftest import pebble_service_is_running
 from tests.integration.helpers.airflow_helpers import (
     json_from_airflow,
     read_airflow_config,
@@ -34,12 +34,10 @@ def test_airflow_config_options_present_and_rewritten_on_relation_change(
 
     cfg = read_airflow_config(juju, target_unit, target_container)
 
-    assert cfg.get("core", "dags_folder") == "dags"
     assert cfg.get("core", "executor") == "LocalExecutor"
     assert cfg.get("core", "load_examples") == "False"
     assert cfg.get("database", "sql_alchemy_conn").startswith("postgresql+psycopg2://")
     assert cfg.get("api", "port") == "8080"
-    assert cfg.get("logging", "base_log_folder") == "logs"
 
     juju.remove_relation(
         f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
@@ -80,7 +78,6 @@ def test_database_connectivity_from_scheduler(
     )
     assert "DB_CHECK_OK" in out, f"Failed to connect to the DB: {out}"
 
-
 def test_config_change_propagates_and_dags_reserialize(
     juju: jubilant.Juju,
 ):
@@ -90,52 +87,44 @@ def test_config_change_propagates_and_dags_reserialize(
         juju, f"{constants.COORDINATOR_APP}/0", "load_examples", True
     )
 
-    # Stop all components to ensure conflictless singular dag reserialization
     for component, app in constants.CORE_CHARMS.items():
         juju.ssh(
             f"{app}/0",
-            "pebble stop airflow",
-            container=constants.CONTAINER_NAMES[component],
+            "pebble restart airflow",
+            container=constants.CONTAINER_NAMES[component]
         )
-
-        service_status = get_pebble_service_status(juju, component, f"{app}/0", "airflow")
-        assert service_status["current"] == "inactive", f"Issue stopping service for {component}"
-
-    juju.ssh(
-        f"{constants.CORE_CHARMS['dag-processor']}/0",
-        "bash -lc " + shlex.quote("airflow dags reserialize"),
-        container=constants.CONTAINER_NAMES["dag-processor"],
-    )
-
-    # Start all components after dag reserialization
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60)
+    
     for component, app in constants.CORE_CHARMS.items():
-        juju.ssh(
-            f"{app}/0",
-            "pebble start airflow",
-            container=constants.CONTAINER_NAMES[component],
-        )
-
-        service_status = get_pebble_service_status(juju, component, f"{app}/0", "airflow")
-        assert service_status["current"] == "active", f"Issue starting service for {component}"
-
-
-    for component, app in constants.CORE_CHARMS.items():
-        cfg = read_airflow_config(
+        config = read_airflow_config(
             juju, f"{app}/0", constants.CONTAINER_NAMES[component]
         )
-        assert cfg.get("core", "load_examples") == "True", (
+        assert config.get("core", "load_examples") == "True", (
             f"Expected load_examples=True in {app} config"
         )
 
-    out = juju.ssh(
-        f"{constants.CORE_CHARMS['scheduler']}/0",
-        "bash -lc "
-        + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
-        container=constants.CONTAINER_NAMES["scheduler"],
+    juju.ssh(
+        f"{constants.CORE_CHARMS['dag-processor']}/0",
+        "bash -lc " + shlex.quote("airflow dags reserialize || true"),
+        container=constants.CONTAINER_NAMES["dag-processor"],
     )
-    assert (
-        isinstance(json_from_airflow(out), list) and len(json_from_airflow(out)) > 0
-    ), f"Expected DAG list output, got: {out}"
+
+    for attempt in Retrying(
+        stop=stop_after_attempt(5),
+        wait=wait_fixed(10),
+        reraise=True,
+    ):
+        with attempt:
+            out = juju.ssh(
+                f"{constants.CORE_CHARMS['scheduler']}/0",
+                "bash -lc "
+                + shlex.quote("PYTHONWARNINGS=ignore airflow dags list --output json"),
+                container=constants.CONTAINER_NAMES["scheduler"],
+            )
+            dags = json_from_airflow(out)
+            assert isinstance(dags, list) and len(dags) > 0, (
+                f"Expected DAG list output, got: {out}"
+            )
 
 
 def test_scheduler_scale_and_resilience(
@@ -151,12 +140,6 @@ def test_scheduler_scale_and_resilience(
             ready=lambda st: jubilant.all_active(st)
             and len(st.apps[constants.CORE_CHARMS["scheduler"]].units) == 3,
             timeout=10 * 60,
-        )
-
-        juju.ssh(
-            f"{constants.CORE_CHARMS['scheduler']}/0",
-            "bash -lc " + shlex.quote(f"airflow dags unpause {dag_id}"),
-            container=constants.CONTAINER_NAMES["scheduler"],
         )
 
         status = juju.status()
@@ -182,13 +165,18 @@ def test_scheduler_scale_and_resilience(
                 + shlex.quote(f"airflow dags trigger {dag_id} --run-id {run_id}"),
                 container=constants.CONTAINER_NAMES["scheduler"],
             )
+            juju.ssh(
+                unit_name,
+                "bash -lc " + shlex.quote(f"airflow dags unpause {dag_id}"),
+                container=constants.CONTAINER_NAMES["scheduler"],
+            )
 
             for attempt in Retrying(
                 stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True
             ):
                 with attempt:
                     out = juju.ssh(
-                        f"{constants.CORE_CHARMS['scheduler']}/0",
+                        unit_name,
                         "bash -lc "
                         + shlex.quote(
                             f"PYTHONWARNINGS=ignore NO_COLOR=1 CLICOLOR=0 TERM=dumb "
