@@ -157,6 +157,8 @@ def write_airflow_config(
         container.push(
             config_path,
             config,
+            user="ubuntu",
+            group="ubuntu",
             make_dirs=True,
         )
         logger.info(f"Successfully wrote Airflow config to {config_path}")
@@ -855,6 +857,8 @@ class AirflowCoordinatorRequires(ops.Object):
         self._workload_container.push(
             filepath,
             k8s_executor_pod_spec,
+            user="ubuntu",
+            group="ubuntu",
             make_dirs=True,
         )
 
