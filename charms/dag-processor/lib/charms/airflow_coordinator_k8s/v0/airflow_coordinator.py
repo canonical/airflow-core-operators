@@ -819,7 +819,6 @@ class AirflowCoordinatorRequires(ops.Object):
 
     def write_airflow_config(self, config_path: str) -> None:
         """Render the Airflow config in the provided path in the workload container."""
-
         provider_content = self._requirer_handler.provider_content
 
         write_airflow_config(
