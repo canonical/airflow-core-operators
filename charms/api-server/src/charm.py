@@ -102,7 +102,9 @@ class AirflowApiServerCharm(ops.CharmBase):
                 ops.WaitingStatus,
             )
         try:
-            should_restart = self._config_requires.airflow_config_needs_update(config_path=config_path)
+            should_restart = self._config_requires.airflow_config_needs_update(
+                config_path=config_path
+            )
             if should_restart:
                 self._config_requires.write_airflow_config(config_path=config_path)
         except (
