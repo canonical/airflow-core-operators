@@ -7,7 +7,7 @@
 import logging
 
 import ops
-from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
 
 import constants
 
@@ -37,7 +37,7 @@ class AirflowDagProcessorCharm(ops.CharmBase):
         self.framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
 
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
-        self._config_requires = AirflowCoordinatorRequires(
+        self._config_requires = AirflowCoordinatorCoreRequires(
             charm=self,
             relation_name=constants.AIRFLOW_COORDINATOR_RELATION_NAME,
             component=constants.AIRFLOW_COMPONENT,
@@ -75,15 +75,16 @@ class AirflowDagProcessorCharm(ops.CharmBase):
             )
 
     def _write_airflow_config(self, config_path: str) -> bool:
-        """Write configuration files to the workload and return if config existed and changed."""
+        """Write configuration files and return whether service restart is required."""
         if not self._config_requires.can_write_airflow_config:
             raise ExitWithStatusError(
                 "Waiting for relation data from coordinator",
                 ops.WaitingStatus,
             )
-        config_exists = self._container.exists(config_path)
         try:
-            config_changed = self._config_requires.write_airflow_config(config_path=config_path)
+            should_restart = self._config_requires.airflow_config_needs_update(config_path=config_path)
+            if should_restart:
+                self._config_requires.write_airflow_config(config_path=config_path)
         except (
             ops.pebble.ConnectionError,
             ops.pebble.Error,
@@ -97,7 +98,7 @@ class AirflowDagProcessorCharm(ops.CharmBase):
                 "Failed to write config file to workload container",
                 ops.BlockedStatus,
             )
-        return config_exists and config_changed
+        return should_restart
 
     @property
     def _dag_processor_layer(self) -> ops.pebble.LayerDict:

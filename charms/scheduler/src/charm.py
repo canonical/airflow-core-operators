@@ -8,7 +8,7 @@ import logging
 
 import ops
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import (
-    AirflowCoordinatorRequires,
+    AirflowCoordinatorCoreRequires,
 )
 from ops.pebble import LayerDict
 
@@ -43,7 +43,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
 
         # Create config requires object for handling Airflow configurations
-        self.config_requires = AirflowCoordinatorRequires(
+        self.config_requires = AirflowCoordinatorCoreRequires(
             charm=self,
             relation_name=constants.AIRFLOW_COORDINATOR_RELATION_NAME,
             component=constants.AIRFLOW_COMPONENT,
@@ -119,7 +119,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
         This method checks if the configuration can be written; otherwise raises.
 
         Returns:
-            bool: True when config existed previously and changed content.
+            bool: True when configuration differs from the existing file.
 
         Raises:
             ExitWithStatusError: if the configuration cannot be written or if
@@ -130,9 +130,12 @@ class AirflowSchedulerCharm(ops.CharmBase):
         if not self.config_requires.can_write_airflow_config:
             raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
 
-        config_exists = self._container.exists(config_path)
         try:
-            config_changed = self.config_requires.write_airflow_config(config_path=config_path)
+            config_changed = self.config_requires.airflow_config_needs_update(
+                config_path=config_path
+            )
+            if config_changed:
+                self.config_requires.write_airflow_config(config_path=config_path)
         except (ops.pebble.ConnectionError, ops.pebble.Error) as e:
             # TODO: is BlockedStatus the best status here? I don't think there's
             # too much a human operator can actually do to resolve the issue.
@@ -143,7 +146,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
             raise ExitWithStatusError(
                 "Failed to write config to workload container", ops.BlockedStatus
             ) from e
-        return config_exists and config_changed
+        return config_changed
 
     def _add_layer_and_replan(self, restart_service: bool = False) -> None:
         """Add the Pebble layer and replan.
