@@ -188,6 +188,7 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
     assert constants.SERVICE_NAME in plan.services
     assert plan.services[constants.SERVICE_NAME].command == "airflow scheduler"
     assert plan.services[constants.SERVICE_NAME].startup == "enabled"
+    assert plan.services[constants.SERVICE_NAME].override == "merge"
 
 
 def test_stop_service_pebble_api_error_scenario(context, state, container):

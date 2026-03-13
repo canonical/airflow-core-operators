@@ -231,3 +231,4 @@ def test_active_status_flow_scenario(context, state, container, api_server_relat
     assert constants.SERVICE_NAME in layer.services
     assert layer.services[constants.SERVICE_NAME].command == "airflow api-server"
     assert layer.services[constants.SERVICE_NAME].startup == "enabled"
+    assert layer.services[constants.SERVICE_NAME].override == "merge"
