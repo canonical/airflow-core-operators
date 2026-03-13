@@ -6,26 +6,19 @@ import unittest.mock
 
 import ops
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import (
-    AirflowCoordinatorRequires,
+    AirflowCoordinatorCoreRequires,
 )
 
 import constants
 
 
-
-def test_pebble_connection_failure_scenario(
-    context, state, container, scheduler_relation
-):
+def test_pebble_connection_failure_scenario(context, state, container, scheduler_relation):
     """Test the scenario when the container cannot connect to Pebble."""
     container = dataclasses.replace(container, can_connect=False)
-    state_in = dataclasses.replace(
-        state, relations=[scheduler_relation], containers=[container]
-    )
+    state_in = dataclasses.replace(state, relations=[scheduler_relation], containers=[container])
     state_out = context.run(context.on.pebble_ready(container), state_in)
 
-    assert state_out.unit_status == ops.MaintenanceStatus(
-        "Cannot connect to workload container"
-    )
+    assert state_out.unit_status == ops.MaintenanceStatus("Cannot connect to workload container")
 
 
 def test_missing_relation_status_scenario(context, state, container):
@@ -33,15 +26,11 @@ def test_missing_relation_status_scenario(context, state, container):
     state_in = dataclasses.replace(state, relations=[])
     with (
         unittest.mock.patch("ops.model.Container.stop", autospec=True),
-        unittest.mock.patch(
-            "ops.model.Container.exists", autospec=True, return_value=False
-        ),
+        unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=False),
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
-    assert state_out.unit_status == ops.BlockedStatus(
-        "Missing airflow-coordinator relation"
-    )
+    assert state_out.unit_status == ops.BlockedStatus("Missing airflow-coordinator relation")
 
 
 def test_missing_relation_with_cleanup_scenario(context, state, container):
@@ -49,12 +38,8 @@ def test_missing_relation_with_cleanup_scenario(context, state, container):
     state_in = dataclasses.replace(state, relations=[])
     with (
         unittest.mock.patch("ops.model.Container.stop", autospec=True) as stop_mock,
-        unittest.mock.patch(
-            "ops.model.Container.exists", autospec=True, return_value=True
-        ),
-        unittest.mock.patch(
-            "ops.model.Container.remove_path", autospec=True
-        ) as remove_mock,
+        unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=True),
+        unittest.mock.patch("ops.model.Container.remove_path", autospec=True) as remove_mock,
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
@@ -67,19 +52,15 @@ def test_missing_relation_with_cleanup_scenario(context, state, container):
     # Check that recursive=False was passed
     assert call_args.kwargs.get("recursive") is False
 
-    assert state_out.unit_status == ops.BlockedStatus(
-        "Missing airflow-coordinator relation"
-    )
+    assert state_out.unit_status == ops.BlockedStatus("Missing airflow-coordinator relation")
 
 
-def test_cannot_write_airflow_config_scenario(
-    context, state, container, scheduler_relation
-):
+def test_cannot_write_airflow_config_scenario(context, state, container, scheduler_relation):
     """Test WaitingStatus when can't write config (validation failures or missing data)."""
     state_in = dataclasses.replace(state, relations=[scheduler_relation])
 
     with unittest.mock.patch.object(
-        AirflowCoordinatorRequires,
+        AirflowCoordinatorCoreRequires,
         "can_write_airflow_config",
         new_callable=unittest.mock.PropertyMock,
         return_value=False,
@@ -96,13 +77,13 @@ def test_failed_airflow_config_write_pebble_error_scenario(
     state_in = dataclasses.replace(state, relations=[scheduler_relation])
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             side_effect=ops.pebble.ConnectionError("Connection failed"),
         ),
@@ -121,13 +102,13 @@ def test_failed_airflow_config_write_generic_scenario(
     state_in = dataclasses.replace(state, relations=[scheduler_relation])
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             side_effect=RuntimeError("Unexpected error"),
         ),
@@ -144,13 +125,13 @@ def test_replan_failure_scenario(context, state, container, scheduler_relation):
     state_in = dataclasses.replace(state, relations=[scheduler_relation])
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires, "write_airflow_config", return_value=None
+            AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
         ),
         unittest.mock.patch(
             "ops.model.Container.replan", side_effect=ops.pebble.ChangeError("x", "y")
@@ -158,9 +139,7 @@ def test_replan_failure_scenario(context, state, container, scheduler_relation):
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
-    assert state_out.unit_status == ops.BlockedStatus(
-        "Failed to replan Pebble services"
-    )
+    assert state_out.unit_status == ops.BlockedStatus("Failed to replan Pebble services")
 
 
 def test_active_status_flow_scenario(context, state, container, scheduler_relation):
@@ -168,13 +147,13 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
     state_in = dataclasses.replace(state, relations=[scheduler_relation])
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires, "write_airflow_config", return_value=None
+            AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
         ),
         unittest.mock.patch("ops.model.Container.replan", autospec=True) as replan_mock,
     ):
@@ -205,6 +184,4 @@ def test_stop_service_pebble_api_error_scenario(context, state, container):
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
-    assert state_out.unit_status == ops.BlockedStatus(
-        "Failed to stop service: Pebble API error"
-    )
+    assert state_out.unit_status == ops.BlockedStatus("Failed to stop service: Pebble API error")

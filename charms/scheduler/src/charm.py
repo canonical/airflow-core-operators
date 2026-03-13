@@ -8,7 +8,7 @@ import logging
 
 import ops
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import (
-    AirflowCoordinatorRequires,
+    AirflowCoordinatorCoreRequires,
 )
 from ops.pebble import LayerDict
 
@@ -43,7 +43,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
 
         # Create config requires object for handling Airflow configurations
-        self.config_requires = AirflowCoordinatorRequires(
+        self.config_requires = AirflowCoordinatorCoreRequires(
             charm=self,
             relation_name=constants.AIRFLOW_COORDINATOR_RELATION_NAME,
             component=constants.AIRFLOW_COMPONENT,
@@ -109,9 +109,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
             # if the relation is not present
             self._stop_service()
             self._cleanup_airflow_home_contents()
-            raise ExitWithStatusError(
-                "Missing airflow-coordinator relation", ops.BlockedStatus
-            )
+            raise ExitWithStatusError("Missing airflow-coordinator relation", ops.BlockedStatus)
 
     def _write_airflow_config(self, config_path) -> None:
         """Write the airflow configuration file inside the workload container given a path.
@@ -148,9 +146,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
         Raises:
             ExitWithStatusError: If the service cannot be replanned.
         """
-        self._container.add_layer(
-            "scheduler-base", self._airflow_scheduler_layer, combine=True
-        )
+        self._container.add_layer("scheduler-base", self._airflow_scheduler_layer, combine=True)
 
         try:
             self._container.replan()

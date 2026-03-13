@@ -5,7 +5,9 @@ import dataclasses
 import unittest.mock
 
 import ops
-from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import (
+    AirflowCoordinatorCoreRequires as AirflowCoordinatorRequires,
+)
 
 import constants
 

@@ -2,7 +2,7 @@ import dataclasses
 import unittest.mock
 
 import ops
-from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
 
 import constants
 
@@ -95,7 +95,7 @@ def test_waiting_when_cannot_write_airflow_config(context, state, container, tri
     state_in = dataclasses.replace(state, relations=[triggerer_relation])
 
     with unittest.mock.patch.object(
-        AirflowCoordinatorRequires,
+        AirflowCoordinatorCoreRequires,
         "can_write_airflow_config",
         new_callable=unittest.mock.PropertyMock,
         return_value=False,
@@ -119,13 +119,13 @@ def test_failed_airflow_config_write_pebble_error_scenario(
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             side_effect=ops.pebble.ConnectionError("Write failed"),
         ),
@@ -146,13 +146,13 @@ def test_failed_airflow_config_write_generic_exception_scenario(
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             side_effect=RuntimeError("Unexpected error"),
         ),
@@ -169,13 +169,13 @@ def test_replan_failure_scenario_test(context, state, container, triggerer_relat
     state_in = dataclasses.replace(state, relations=[triggerer_relation])
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires, "write_airflow_config", return_value=None
+            AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
         ),
         unittest.mock.patch(
             "ops.model.Container.replan", side_effect=ops.pebble.ChangeError("x", "y")
@@ -198,13 +198,13 @@ def test_replan_failure_scenario(context, state, container, triggerer_relation):
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             return_value=None,
         ),
@@ -230,13 +230,13 @@ def test_active_status_flow_scenario(context, state, container, triggerer_relati
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             return_value=None,
         ),
