@@ -57,10 +57,12 @@ class AirflowSchedulerCharm(ops.CharmBase):
         layer: LayerDict = {
             "services": {
                 constants.SERVICE_NAME: {
-                    "override": "merge",
+                    "override": "replace",
                     "summary": "The airflow scheduler service.",
                     "command": "airflow scheduler",
                     "startup": "enabled",
+                    "user": constants.WORKLOAD_USER,
+                    "group": constants.WORKLOAD_GROUP,
                 }
             }
         }

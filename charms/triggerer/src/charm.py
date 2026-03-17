@@ -103,10 +103,12 @@ class AirflowTriggererCharm(ops.CharmBase):
         layer: ops.pebble.LayerDict = {
             "services": {
                 constants.SERVICE_NAME: {
-                    "override": "merge",
+                    "override": "replace",
                     "summary": "A service that runs the triggerer workload.",
                     "command": "airflow triggerer",
                     "startup": "enabled",
+                    "user": constants.WORKLOAD_USER,
+                    "group": constants.WORKLOAD_GROUP,
                 }
             }
         }

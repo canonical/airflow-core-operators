@@ -250,4 +250,6 @@ def test_active_status_flow_scenario(context, state, container, triggerer_relati
     assert constants.SERVICE_NAME in layer.services
     assert layer.services[constants.SERVICE_NAME].command == "airflow triggerer"
     assert layer.services[constants.SERVICE_NAME].startup == "enabled"
-    assert layer.services[constants.SERVICE_NAME].override == "merge"
+    assert layer.services[constants.SERVICE_NAME].override == "replace"
+    assert layer.services[constants.SERVICE_NAME].user == "ubuntu"
+    assert layer.services[constants.SERVICE_NAME].group == "ubuntu"
