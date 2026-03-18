@@ -102,7 +102,11 @@ class AirflowApiServerCharm(ops.CharmBase):
                 ops.WaitingStatus,
             )
         try:
-            self._config_requires.write_airflow_config(config_path=config_path)
+            self._config_requires.write_airflow_config(
+                config_path=config_path,
+                user=constants.WORKLOAD_USER,
+                group=constants.WORKLOAD_GROUP,
+            )
         except (
             ops.pebble.ConnectionError,
             ops.pebble.Error,

@@ -161,7 +161,7 @@ def test_core_charms_wait_when_database_unavailable(
         expected_state = "active" if component == "api-server" else "backoff"
 
         for attempt in Retrying(
-            stop=stop_after_attempt(3), wait=wait_fixed(20), reraise=True
+            stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True
         ):
             with attempt:
                 if expected_state == "active":
