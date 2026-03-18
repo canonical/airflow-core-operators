@@ -109,17 +109,12 @@ class AirflowSchedulerCharm(ops.CharmBase):
             # if the relation is not present
             self._stop_service()
             self._cleanup_airflow_home_contents()
-            raise ExitWithStatusError(
-                "Missing airflow-coordinator relation", ops.BlockedStatus
-            )
+            raise ExitWithStatusError("Missing airflow-coordinator relation", ops.BlockedStatus)
 
-    def _write_airflow_config(self, config_path) -> bool:
+    def _write_airflow_config(self, config_path: str) -> None:
         """Write the airflow configuration file inside the workload container given a path.
 
         This method checks if the configuration can be written; otherwise raises.
-
-        Returns:
-            bool: True when configuration differs from the existing file.
 
         Raises:
             ExitWithStatusError: if the configuration cannot be written or if
@@ -131,11 +126,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
             raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
 
         try:
-            config_changed = self.config_requires.airflow_config_needs_update(
-                config_path=config_path
-            )
-            if config_changed:
-                self.config_requires.write_airflow_config(config_path=config_path)
+            self.config_requires.write_airflow_config(config_path=config_path)
         except (ops.pebble.ConnectionError, ops.pebble.Error) as e:
             # TODO: is BlockedStatus the best status here? I don't think there's
             # too much a human operator can actually do to resolve the issue.
@@ -146,7 +137,6 @@ class AirflowSchedulerCharm(ops.CharmBase):
             raise ExitWithStatusError(
                 "Failed to write config to workload container", ops.BlockedStatus
             ) from e
-        return config_changed
 
     def _add_layer_and_replan(self, restart_service: bool = False) -> None:
         """Add the Pebble layer and replan.
@@ -156,9 +146,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
         Raises:
             ExitWithStatusError: If the service cannot be replanned.
         """
-        self._container.add_layer(
-            "scheduler-base", self._airflow_scheduler_layer, combine=True
-        )
+        self._container.add_layer("scheduler-base", self._airflow_scheduler_layer, combine=True)
 
         try:
             self._container.replan()
@@ -182,9 +170,13 @@ class AirflowSchedulerCharm(ops.CharmBase):
         try:
             self._check_container_can_connect()
             self._check_required_relation_and_act()
-            restart_service = self._write_airflow_config(
+            if not self.config_requires.can_write_airflow_config:
+                raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
+            restart_service = self.config_requires.airflow_config_needs_update(
                 config_path=constants.AIRFLOW_CONFIG_PATH,
             )
+            if restart_service:
+                self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
             self._add_layer_and_replan(restart_service=restart_service)
         except ExitWithStatusError as e:
             self.unit.status = e.status

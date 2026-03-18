@@ -282,10 +282,8 @@ def test_restart_when_existing_config_changes(context, state, container, api_ser
     restart_mock.assert_called_once()
 
 
-def test_no_restart_when_config_created_first_time(
-    context, state, container, api_server_relation
-):
-    """Do not restart when airflow.cfg is first created."""
+def test_no_restart_when_config_unchanged(context, state, container, api_server_relation):
+    """Do not restart when airflow config content is unchanged."""
     state_in = dataclasses.replace(state, relations=[api_server_relation])
 
     with (
