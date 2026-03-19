@@ -7,7 +7,7 @@
 import logging
 
 import ops
-from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
 
 import constants
 
@@ -37,7 +37,7 @@ class AirflowTriggererCharm(ops.CharmBase):
         self.framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
 
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
-        self._config_requires = AirflowCoordinatorRequires(
+        self._config_requires = AirflowCoordinatorCoreRequires(
             charm=self,
             relation_name=constants.AIRFLOW_COORDINATOR_RELATION_NAME,
             component=constants.AIRFLOW_COMPONENT,
@@ -82,7 +82,11 @@ class AirflowTriggererCharm(ops.CharmBase):
                 ops.WaitingStatus,
             )
         try:
-            self._config_requires.write_airflow_config(config_path=config_path)
+            self._config_requires.write_airflow_config(
+                config_path=config_path,
+                user=constants.WORKLOAD_USER,
+                group=constants.WORKLOAD_GROUP,
+            )
         except (
             ops.pebble.ConnectionError,
             ops.pebble.Error,
@@ -107,6 +111,8 @@ class AirflowTriggererCharm(ops.CharmBase):
                     "summary": "A service that runs the triggerer workload.",
                     "command": "airflow triggerer",
                     "startup": "enabled",
+                    "user": constants.WORKLOAD_USER,
+                    "group": constants.WORKLOAD_GROUP,
                 }
             }
         }

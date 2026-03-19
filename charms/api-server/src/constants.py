@@ -9,3 +9,5 @@ AIRFLOW_API_SERVER_RELATION_ENDPOINT = "airflow-api-server"
 
 AIRFLOW_HOME = "/opt/airflow"
 AIRFLOW_CONFIG_PATH = f"{AIRFLOW_HOME}/airflow.cfg"
+WORKLOAD_USER = "ubuntu"
+WORKLOAD_GROUP = "ubuntu"

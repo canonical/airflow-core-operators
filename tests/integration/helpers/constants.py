@@ -72,6 +72,8 @@ EXPECTED_RELATIONS = [
 
 AIRFLOW_CONFIG_PATH = f"{AIRFLOW_HOME}/airflow.cfg"
 DEFAULT_DAGS_PATH = f"{AIRFLOW_HOME}/dags"
+WORKLOAD_USER = "ubuntu"
+WORKLOAD_GROUP = "ubuntu"
 
 AUTH_FILE = f"{AIRFLOW_HOME}/simple_auth_manager_passwords.json.generated"
 
