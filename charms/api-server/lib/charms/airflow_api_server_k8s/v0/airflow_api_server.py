@@ -66,6 +66,7 @@ LIBPATCH = 1
 
 HOST_KEY = "host"
 PORT_KEY = "port"
+PROTOCOL_KEY = "protocol"
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +80,13 @@ class AirflowAPIServerProvides(ops.Object):
         relation_name: str,
         host: str,
         port: str,
+        protocol: str = "http",
     ):
         super().__init__(charm, relation_name)
 
         self._charm = charm
         self._relation = charm.model.get_relation(relation_name)
+        self._protocol = protocol
 
         self._set_api_server_host_info(host, port)
 
@@ -102,6 +105,7 @@ class AirflowAPIServerProvides(ops.Object):
 
         self._relation.data[self._charm.app][HOST_KEY] = host
         self._relation.data[self._charm.app][PORT_KEY] = port
+        self._relation.data[self._charm.app][PROTOCOL_KEY] = self._protocol
 
 
 class AirflowAPIServerRequires(ops.Object):
@@ -139,3 +143,11 @@ class AirflowAPIServerRequires(ops.Object):
             return None
 
         return self._relation.data[self._relation.app].get(PORT_KEY)
+
+    @property
+    def api_server_protocol(self) -> typing.Optional[str]:
+        """Return API server protocol."""
+        if not self._relation or not self._relation.app:
+            return None
+
+        return self._relation.data[self._relation.app].get(PROTOCOL_KEY)

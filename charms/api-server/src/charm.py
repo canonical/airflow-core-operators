@@ -5,13 +5,16 @@
 """Charm the Airflow API Server."""
 
 import logging
+from urllib.parse import urlparse
 
 import ops
 from charms.airflow_api_server_k8s.v0.airflow_api_server import AirflowAPIServerProvides
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
-from charms.traefik_k8s.v2.ingress import (IngressPerAppRequirer,
-  IngressPerAppReadyEvent, IngressPerAppRevokedEvent)
-
+from charms.traefik_k8s.v2.ingress import (
+    IngressPerAppReadyEvent,
+    IngressPerAppRequirer,
+    IngressPerAppRevokedEvent,
+)
 
 import constants
 
@@ -54,21 +57,36 @@ class AirflowApiServerCharm(ops.CharmBase):
             constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT,
             self._airflow_api_server_host,
             str(self._airflow_api_server_port),
+            self._airflow_api_server_protocol,
         )
-        self.ingress = IngressPerAppRequirer(self, port=80)
-        self.framework.observe(
-            self.ingress.on.ready, self._on_ingress_ready
+        self._ingress = IngressPerAppRequirer(
+            self,
+            port=self._airflow_api_server_port,
+            strip_prefix=True,
         )
-        self.framework.observe(
-            self.ingress.on.revoked, self._on_ingress_revoked
-        )
-        
 
+        self.framework.observe(self._ingress.on.ready, self._on_ingress_ready)
+        self.framework.observe(self._ingress.on.revoked, self._on_ingress_revoked)
+
+    @property
+    def _airflow_api_server_protocol(self) -> str:
+        """Airflow API Server protocol."""
+        # Default to http, but can be updated if ingress relation is present with a URL that has a scheme
+        if self._ingress.url:
+            parsed = urlparse(self._ingress.url)
+            if parsed.scheme:
+                return parsed.scheme
+        return "http"
+    
     @property
     def _airflow_api_server_host(self) -> str:
         """Airflow API Server hostname."""
         # Hard-coded, but subject to change with addition of features like
         # ingress or configurable options of the type of K8s service for the application
+        if self._ingress.url:
+            parsed = urlparse(self._ingress.url)
+            if parsed.hostname:
+                return parsed.hostname
         return f"{self.app.name}-endpoints.{self.model.name}.svc.cluster.local"
 
     @property
@@ -160,13 +178,15 @@ class AirflowApiServerCharm(ops.CharmBase):
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
             )
-    
+
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent):
         logger.info("This app's ingress URL: %s", event.url)
+        # self._reconcile(event)
 
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent):
         logger.info("This app no longer has ingress")
-    
+        # self._reconcile(event)
+
     def _reconcile(self, _) -> None:
         """Reconcile the charm state."""
         try:
