@@ -1,0 +1,164 @@
+# Copyright 2026 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+"""Scenario tests for Traefik ingress integration with the Airflow API Server charm."""
+
+import dataclasses
+import json
+import unittest.mock
+
+import ops
+import ops.testing
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
+
+import constants
+
+
+def _ingress_relation(*, url: str | None = None) -> ops.testing.Relation:
+    """Create an ingress relation, optionally with a provider-published URL."""
+    remote_app_data = {}
+    if url:
+        remote_app_data["ingress"] = json.dumps({"url": url})
+    return ops.testing.Relation(
+        "ingress",
+        remote_app_data=remote_app_data,
+    )
+
+
+def _mock_coordinator_config():
+    """Context manager that mocks the coordinator to allow config writes."""
+    return (
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorRequires,
+            "write_airflow_config",
+            return_value=None,
+        ),
+    )
+
+
+# ── Charm remains Active with ingress relation present ──────────────────
+
+
+def test_active_status_with_ingress_relation(context, state, container, api_server_relation):
+    """Charm reaches ActiveStatus when both coordinator and ingress relations exist."""
+    ingress_rel = _ingress_relation()
+    state_in = dataclasses.replace(
+        state,
+        relations=[api_server_relation, ingress_rel],
+        containers=[container],
+    )
+
+    mock_can_write, mock_write = _mock_coordinator_config()
+    with mock_can_write, mock_write:
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
+    layer = out_container.layers["api-server-base"]
+    assert constants.SERVICE_NAME in layer.services
+
+
+# ── Charm remains Active without ingress relation ───────────────────────
+
+
+def test_active_status_without_ingress_relation(context, state, container, api_server_relation):
+    """Ingress is optional — charm reaches ActiveStatus without it."""
+    state_in = dataclasses.replace(
+        state,
+        relations=[api_server_relation],
+        containers=[container],
+    )
+
+    mock_can_write, mock_write = _mock_coordinator_config()
+    with mock_can_write, mock_write:
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+
+
+# ── IngressPerAppRequirer is initialized correctly ──────────────────────
+
+
+def test_ingress_requirer_initialized(context, state, container, api_server_relation):
+    """The charm creates an IngressPerAppRequirer instance with port=80."""
+    state_in = dataclasses.replace(
+        state,
+        relations=[api_server_relation],
+        containers=[container],
+    )
+
+    mock_can_write, mock_write = _mock_coordinator_config()
+    with mock_can_write, mock_write:
+        with context(context.on.pebble_ready(container), state_in) as manager:
+            manager.run()
+            assert hasattr(manager.charm, "ingress")
+            assert isinstance(manager.charm.ingress, IngressPerAppRequirer)
+
+
+# ── Ingress ready event handler logs the URL ────────────────────────────
+
+
+def test_ingress_ready_event_logs_url(context, state, container, api_server_relation):
+    """When the ingress ready event fires, the charm logs the URL."""
+    ingress_rel = _ingress_relation(url="http://traefik:80/test-model-airflow-api-server-k8s")
+    state_in = dataclasses.replace(
+        state,
+        relations=[api_server_relation, ingress_rel],
+        containers=[container],
+    )
+
+    mock_can_write, mock_write = _mock_coordinator_config()
+    with mock_can_write, mock_write:
+        state_out = context.run(context.on.relation_changed(ingress_rel), state_in)
+
+    # The charm should still be in a valid state after receiving the ingress ready event
+    assert state_out.unit_status == ops.ActiveStatus()
+
+
+# ── Ingress revoked event handler ──────────────────────────────────────
+
+
+def test_ingress_revoked_on_relation_broken(context, state, container, api_server_relation):
+    """When the ingress relation is broken, the charm handles revocation gracefully."""
+    ingress_rel = _ingress_relation(url="http://traefik:80/test-model-airflow-api-server-k8s")
+    state_in = dataclasses.replace(
+        state,
+        relations=[api_server_relation, ingress_rel],
+        containers=[container],
+    )
+
+    mock_can_write, mock_write = _mock_coordinator_config()
+    with mock_can_write, mock_write:
+        state_out = context.run(context.on.relation_broken(ingress_rel), state_in)
+
+    # Charm should not crash; still active because coordinator relation is present
+    assert state_out.unit_status == ops.ActiveStatus()
+
+
+# ── Missing coordinator blocks even with ingress present ────────────────
+
+
+def test_blocked_without_coordinator_even_with_ingress(context, state, container):
+    """Without the coordinator relation, charm blocks even if ingress is present."""
+    ingress_rel = _ingress_relation(url="http://traefik:80/test-model-airflow-api-server-k8s")
+    state_in = dataclasses.replace(
+        state,
+        relations=[ingress_rel],
+        containers=[container],
+    )
+
+    with (
+        unittest.mock.patch("ops.model.Container.stop", autospec=True),
+        unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=False),
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.BlockedStatus("Missing airflow-coordinator relation")

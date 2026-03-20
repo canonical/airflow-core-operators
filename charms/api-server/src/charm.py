@@ -9,6 +9,9 @@ import logging
 import ops
 from charms.airflow_api_server_k8s.v0.airflow_api_server import AirflowAPIServerProvides
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+from charms.traefik_k8s.v2.ingress import (IngressPerAppRequirer,
+  IngressPerAppReadyEvent, IngressPerAppRevokedEvent)
+
 
 import constants
 
@@ -52,6 +55,14 @@ class AirflowApiServerCharm(ops.CharmBase):
             self._airflow_api_server_host,
             str(self._airflow_api_server_port),
         )
+        self.ingress = IngressPerAppRequirer(self, port=80)
+        self.framework.observe(
+            self.ingress.on.ready, self._on_ingress_ready
+        )
+        self.framework.observe(
+            self.ingress.on.revoked, self._on_ingress_revoked
+        )
+        
 
     @property
     def _airflow_api_server_host(self) -> str:
@@ -149,7 +160,13 @@ class AirflowApiServerCharm(ops.CharmBase):
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
             )
+    
+    def _on_ingress_ready(self, event: IngressPerAppReadyEvent):
+        logger.info("This app's ingress URL: %s", event.url)
 
+    def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent):
+        logger.info("This app no longer has ingress")
+    
     def _reconcile(self, _) -> None:
         """Reconcile the charm state."""
         try:
