@@ -169,12 +169,12 @@ class AirflowApiServerCharm(ops.CharmBase):
                     "Waiting for relation data from coordinator",
                     ops.WaitingStatus,
                 )
-            restart_service = self._config_requires.airflow_config_needs_update(
+            airflow_config_updated = self._config_requires.airflow_config_needs_update(
                 config_path=constants.AIRFLOW_CONFIG_PATH
             )
-            if restart_service:
+            if airflow_config_updated:
                 self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
-            self._add_layer_and_replan(restart_service=restart_service)
+            self._add_layer_and_replan(restart_service=airflow_config_updated)
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return
