@@ -8,6 +8,7 @@ import ops
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import (
     AirflowCoordinatorCoreRequires,
 )
+import constants
 
 
 def test_pebble_connection_failure_scenario(context, state, container, scheduler_relation):
@@ -186,14 +187,14 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
     assert state_out.unit_status == ops.ActiveStatus()
     replan_mock.assert_called_once()
 
-    out_container = state_out.get_container("airflow-scheduler")
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
     plan = out_container.layers["scheduler-base"]
-    assert "airflow" in plan.services
-    assert plan.services["airflow"].command == "airflow scheduler"
-    assert plan.services["airflow"].startup == "enabled"
-    assert plan.services["airflow"].override == "replace"
-    assert plan.services["airflow"].user == "ubuntu"
-    assert plan.services["airflow"].group == "ubuntu"
+    assert constants.SERVICE_NAME in plan.services
+    assert plan.services[constants.SERVICE_NAME].command == "airflow scheduler"
+    assert plan.services[constants.SERVICE_NAME].startup == "enabled"
+    assert plan.services[constants.SERVICE_NAME].override == "replace"
+    assert plan.services[constants.SERVICE_NAME].user == "ubuntu"
+    assert plan.services[constants.SERVICE_NAME].group == "ubuntu"
 
 
 def test_restart_when_existing_config_changes(context, state, container, scheduler_relation):
