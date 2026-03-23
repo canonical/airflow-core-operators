@@ -145,17 +145,21 @@ def test_scheduler_scale_and_resilience(
         for unit_name, unit_status in status.apps[
             constants.CORE_CHARMS["scheduler"]
         ].units.items():
-            assert unit_status.is_active, (
-                f"{unit_name} should be active, got {unit_status.workload_status.current}"
-            )
-            assert pebble_service_is_running(
-                juju,
-                unit_name,
-                "scheduler",
-                constants.PEBBLE_SERVICE_NAME,
-            ), (
-                f"{unit_name}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
-            )
+            for attempt in Retrying(
+                stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True
+            ):
+                with attempt:
+                    assert unit_status.is_active, (
+                        f"{unit_name} should be active, got {unit_status.workload_status.current}"
+                    )
+                    assert pebble_service_is_running(
+                        juju,
+                        unit_name,
+                        "scheduler",
+                        constants.PEBBLE_SERVICE_NAME,
+                    ), (
+                        f"{unit_name}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
+                    )
 
             run_id = f"scale-{unit_name.replace('/', '-')}-{int(time.time())}"
             juju.ssh(

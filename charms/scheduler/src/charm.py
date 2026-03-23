@@ -61,6 +61,8 @@ class AirflowSchedulerCharm(ops.CharmBase):
                     "summary": "The airflow scheduler service.",
                     "command": "airflow scheduler",
                     "startup": "enabled",
+                    "user": constants.WORKLOAD_USER,
+                    "group": constants.WORKLOAD_GROUP,
                 }
             }
         }
@@ -126,7 +128,11 @@ class AirflowSchedulerCharm(ops.CharmBase):
             raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
 
         try:
-            self.config_requires.write_airflow_config(config_path=config_path)
+            self.config_requires.write_airflow_config(
+                config_path=config_path,
+                user=constants.WORKLOAD_USER,
+                group=constants.WORKLOAD_GROUP,
+            )
         except (ops.pebble.ConnectionError, ops.pebble.Error) as e:
             # TODO: is BlockedStatus the best status here? I don't think there's
             # too much a human operator can actually do to resolve the issue.
