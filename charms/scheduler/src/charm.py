@@ -144,6 +144,24 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 "Failed to write config to workload container", ops.BlockedStatus
             ) from e
 
+    def _remove_stale_kubernetes_executor_pod_spec(
+        self, filepath: str = constants.AIRFLOW_POD_TEMPLATE_FILE_PATH
+    ) -> None:
+        """Remove the pod spec if it no longer exists in the relation databag.
+
+        Args:
+            filepath: Path inside the workload container where the pod spec is assumed to live.
+              Defaults to: AIRFLOW_HOME/pod_templates/worker_pod_template.yaml.
+        """
+        # This means that the pod spec exists in the databag and
+        # there are no issues writing it to the workload container
+        if self.config_requires.can_write_kubernetes_executor_pod_spec:
+            return
+
+        if self._container.exists(filepath):
+            logger.info("Removing Kubernetes Executor pod spec.")
+            self._container.remove_path(filepath, recursive=False)
+
     def _write_kubernetes_executor_pod_spec(
         self, filepath: str = constants.AIRFLOW_POD_TEMPLATE_FILE_PATH
     ) -> None:
@@ -159,10 +177,13 @@ class AirflowSchedulerCharm(ops.CharmBase):
         Raises:
             ExitWithStatusError: if the write operation fails.
         """
+        # This means that either the podspec does not exist or there are issues
+        # trying to write the file in the workload container
+        # FIXME: if the AirflowCoordinatorCoreRequires object had a way to access
+        # the value of the k8s executor pod spec, we could improve this check to
+        # correctly identify the reason why we cannot write the file.
         if not self.config_requires.can_write_kubernetes_executor_pod_spec:
-            if self._container.exists(filepath):
-                logger.info("Pod spec no longer in databag, removing %s", filepath)
-                self._container.remove_path(filepath, recursive=False)
+            logger.info("The Kubernetes Executor pod spec file was not written.")
             return
 
         try:
@@ -222,6 +243,8 @@ class AirflowSchedulerCharm(ops.CharmBase):
             if restart_service:
                 self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
             self._add_layer_and_replan(restart_service=restart_service)
+            self._remove_stale_kubernetes_executor_pod_spec()
+            self._add_layer_and_replan()
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return
