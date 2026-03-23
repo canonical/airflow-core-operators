@@ -191,6 +191,9 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
     assert "airflow" in plan.services
     assert plan.services["airflow"].command == "airflow scheduler"
     assert plan.services["airflow"].startup == "enabled"
+    assert plan.services["airflow"].override == "replace"
+    assert plan.services["airflow"].user == "ubuntu"
+    assert plan.services["airflow"].group == "ubuntu"
 
 
 def test_restart_when_existing_config_changes(context, state, container, scheduler_relation):

@@ -252,6 +252,9 @@ def test_active_status_flow_scenario(context, state, container, dag_processor_re
     assert constants.SERVICE_NAME in layer.services
     assert layer.services[constants.SERVICE_NAME].command == "airflow dag-processor"
     assert layer.services[constants.SERVICE_NAME].startup == "enabled"
+    assert layer.services[constants.SERVICE_NAME].override == "replace"
+    assert layer.services[constants.SERVICE_NAME].user == "ubuntu"
+    assert layer.services[constants.SERVICE_NAME].group == "ubuntu"
 
 
 def test_restart_when_existing_config_changes(context, state, container, dag_processor_relation):
