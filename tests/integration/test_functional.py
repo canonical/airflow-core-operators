@@ -87,21 +87,20 @@ def test_config_change_propagates_and_dags_reserialize(
         juju, f"{constants.COORDINATOR_APP}/0", "load_examples", True
     )
 
+    juju.wait(jubilant.all_active, timeout=5 * 60)
     for component, app in constants.CORE_CHARMS.items():
-        juju.ssh(
-            f"{app}/0",
-            "pebble restart airflow",
-            container=constants.CONTAINER_NAMES[component]
-        )
-    juju.wait(jubilant.all_agents_idle, timeout=5 * 60)
-    
-    for component, app in constants.CORE_CHARMS.items():
-        config = read_airflow_config(
-            juju, f"{app}/0", constants.CONTAINER_NAMES[component]
-        )
-        assert config.get("core", "load_examples") == "True", (
-            f"Expected load_examples=True in {app} config"
-        )
+        for attempt in Retrying(
+            stop=stop_after_attempt(36),
+            wait=wait_fixed(10),
+            reraise=True,
+        ):
+            with attempt:
+                config = read_airflow_config(
+                    juju, f"{app}/0", constants.CONTAINER_NAMES[component]
+                )
+                assert config.get("core", "load_examples") == "True", (
+                    f"Expected load_examples=True in {app} config"
+                )
 
     juju.ssh(
         f"{constants.CORE_CHARMS['dag-processor']}/0",

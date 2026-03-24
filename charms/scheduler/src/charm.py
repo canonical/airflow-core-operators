@@ -113,7 +113,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
             self._cleanup_airflow_home_contents()
             raise ExitWithStatusError("Missing airflow-coordinator relation", ops.BlockedStatus)
 
-    def _write_airflow_config(self, config_path) -> None:
+    def _write_airflow_config(self, config_path: str) -> None:
         """Write the airflow configuration file inside the workload container given a path.
 
         This method checks if the configuration can be written; otherwise raises.
@@ -144,7 +144,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 "Failed to write config to workload container", ops.BlockedStatus
             ) from e
 
-    def _add_layer_and_replan(self) -> None:
+    def _add_layer_and_replan(self, restart_service: bool = False) -> None:
         """Add the Pebble layer and replan.
 
         The service will start automatically since startup is enabled.
@@ -156,7 +156,16 @@ class AirflowSchedulerCharm(ops.CharmBase):
 
         try:
             self._container.replan()
+            if restart_service:
+                self._container.restart(constants.SERVICE_NAME)
         except ops.pebble.ChangeError as e:
+            logger.exception("Pebble replan failed for scheduler service: %s", e)
+            raise ExitWithStatusError(
+                "Failed to replan Pebble services",
+                ops.BlockedStatus,
+            ) from e
+        except ops.pebble.APIError as e:
+            logger.exception("Pebble restart failed for scheduler service: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
@@ -167,10 +176,14 @@ class AirflowSchedulerCharm(ops.CharmBase):
         try:
             self._check_container_can_connect()
             self._check_required_relation_and_act()
-            self._write_airflow_config(
+            if not self.config_requires.can_write_airflow_config:
+                raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
+            restart_service = self.config_requires.airflow_config_needs_update(
                 config_path=constants.AIRFLOW_CONFIG_PATH,
             )
-            self._add_layer_and_replan()
+            if restart_service:
+                self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
+            self._add_layer_and_replan(restart_service=restart_service)
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return
