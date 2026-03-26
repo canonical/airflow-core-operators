@@ -202,7 +202,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 f"Failed to write pod spec to workload container: {e}", ops.BlockedStatus
             ) from e
 
-    def _add_layer_and_replan(self) -> None:
+    def _add_layer_and_replan(self, restart_service: bool = False) -> None:
         """Add the Pebble layer and replan.
 
         The service will start automatically since startup is enabled.

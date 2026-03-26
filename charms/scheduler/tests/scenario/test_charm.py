@@ -8,6 +8,7 @@ import ops
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import (
     AirflowCoordinatorCoreRequires,
 )
+
 import constants
 
 
@@ -263,6 +264,11 @@ def test_pod_spec_no_op_when_not_available_scenario(context, state, container, s
         ),
         unittest.mock.patch.object(
             AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=False,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
             "can_write_kubernetes_executor_pod_spec",
             new_callable=unittest.mock.PropertyMock,
             return_value=False,
@@ -295,6 +301,11 @@ def test_pod_spec_removed_when_not_in_databag_scenario(
         ),
         unittest.mock.patch.object(
             AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=False,
         ),
         unittest.mock.patch.object(
             AirflowCoordinatorCoreRequires,
@@ -334,6 +345,11 @@ def test_pod_spec_written_successfully_scenario(context, state, container, sched
         ),
         unittest.mock.patch.object(
             AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=False,
         ),
         unittest.mock.patch.object(
             AirflowCoordinatorCoreRequires,
