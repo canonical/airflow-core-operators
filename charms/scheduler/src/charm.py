@@ -244,7 +244,6 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
             self._add_layer_and_replan(restart_service=restart_service)
             self._remove_stale_kubernetes_executor_pod_spec()
-            self._add_layer_and_replan()
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return
