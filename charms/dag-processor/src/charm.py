@@ -7,7 +7,7 @@
 import logging
 
 import ops
-from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
 
 import constants
 
@@ -37,7 +37,7 @@ class AirflowDagProcessorCharm(ops.CharmBase):
         self.framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
 
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
-        self._config_requires = AirflowCoordinatorRequires(
+        self._config_requires = AirflowCoordinatorCoreRequires(
             charm=self,
             relation_name=constants.AIRFLOW_COORDINATOR_RELATION_NAME,
             component=constants.AIRFLOW_COMPONENT,
@@ -75,14 +75,18 @@ class AirflowDagProcessorCharm(ops.CharmBase):
             )
 
     def _write_airflow_config(self, config_path: str) -> None:
-        """Write configuration files to the workload."""
+        """Write the airflow config to the workload container."""
         if not self._config_requires.can_write_airflow_config:
             raise ExitWithStatusError(
                 "Waiting for relation data from coordinator",
                 ops.WaitingStatus,
             )
         try:
-            self._config_requires.write_airflow_config(config_path=config_path)
+            self._config_requires.write_airflow_config(
+                config_path=config_path,
+                user=constants.WORKLOAD_USER,
+                group=constants.WORKLOAD_GROUP,
+            )
         except (
             ops.pebble.ConnectionError,
             ops.pebble.Error,
@@ -107,12 +111,14 @@ class AirflowDagProcessorCharm(ops.CharmBase):
                     "summary": "A service that runs the dag-processor workload.",
                     "command": "airflow dag-processor",
                     "startup": "enabled",
+                    "user": constants.WORKLOAD_USER,
+                    "group": constants.WORKLOAD_GROUP,
                 }
             }
         }
         return layer
 
-    def _add_layer_and_replan(self) -> None:
+    def _add_layer_and_replan(self, restart_service: bool = False) -> None:
         """Add the Pebble layer and replan the services.
 
         The service starts automatically after replanning as startup is enabled.
@@ -123,8 +129,17 @@ class AirflowDagProcessorCharm(ops.CharmBase):
         self._container.add_layer("dag-processor-base", self._dag_processor_layer, combine=True)
         try:
             self._container.replan()
+            if restart_service:
+                self._container.restart(constants.SERVICE_NAME)
 
-        except ops.pebble.ChangeError:
+        except ops.pebble.ChangeError as e:
+            logger.exception("Pebble replan failed for dag-processor service: %s", e)
+            raise ExitWithStatusError(
+                "Failed to replan Pebble services",
+                ops.BlockedStatus,
+            )
+        except ops.pebble.APIError as e:
+            logger.exception("Pebble restart failed for dag-processor service: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
@@ -135,8 +150,17 @@ class AirflowDagProcessorCharm(ops.CharmBase):
         try:
             self._check_pebble_connection()
             self._check_required_relations()
-            self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
-            self._add_layer_and_replan()
+            if not self._config_requires.can_write_airflow_config:
+                raise ExitWithStatusError(
+                    "Waiting for relation data from coordinator",
+                    ops.WaitingStatus,
+                )
+            restart_service = self._config_requires.airflow_config_needs_update(
+                config_path=constants.AIRFLOW_CONFIG_PATH
+            )
+            if restart_service:
+                self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
+            self._add_layer_and_replan(restart_service=restart_service)
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return

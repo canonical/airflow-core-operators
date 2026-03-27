@@ -29,15 +29,28 @@ def test_pebble_services_and_config_exist(
 ):
     """Pebble services should be active and config should be present."""
 
-    output = juju.ssh(
-        f"{app}/0",
-        f"test -f {shlex.quote(constants.AIRFLOW_CONFIG_PATH)} && echo OK || echo MISSING",
-        container=constants.CONTAINER_NAMES[component],
-    )
-    assert "OK" in output, f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
-    assert pebble_service_is_running(
-        juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
-    ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
+    for attempt in Retrying(stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True):
+        with attempt:
+            output = juju.ssh(
+                f"{app}/0",
+                f"test -f {shlex.quote(constants.AIRFLOW_CONFIG_PATH)} && echo OK || echo MISSING",
+                container=constants.CONTAINER_NAMES[component],
+            )
+            assert "OK" in output, f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
+
+            ownership = juju.ssh(
+                f"{app}/0",
+                f"stat -c '%U:%G' {shlex.quote(constants.AIRFLOW_CONFIG_PATH)}",
+                container=constants.CONTAINER_NAMES[component],
+            ).strip()
+            assert ownership == f"{constants.WORKLOAD_USER}:{constants.WORKLOAD_GROUP}", (
+                f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to be owned by "
+                f"{constants.WORKLOAD_USER}:{constants.WORKLOAD_GROUP}, got {ownership}"
+            )
+
+            assert pebble_service_is_running(
+                juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
+            ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
 
 
 def test_airflow_cluster_health_via_api_endpoint(
@@ -148,7 +161,7 @@ def test_core_charms_wait_when_database_unavailable(
         expected_state = "active" if component == "api-server" else "backoff"
 
         for attempt in Retrying(
-            stop=stop_after_attempt(3), wait=wait_fixed(20), reraise=True
+            stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True
         ):
             with attempt:
                 if expected_state == "active":

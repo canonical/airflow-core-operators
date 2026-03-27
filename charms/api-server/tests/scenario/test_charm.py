@@ -5,7 +5,7 @@ import dataclasses
 import unittest.mock
 
 import ops
-from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
 
 import constants
 
@@ -98,7 +98,7 @@ def test_waiting_when_cannot_write_airflow_config(context, state, container, api
     state_in = dataclasses.replace(state, relations=[api_server_relation])
 
     with unittest.mock.patch.object(
-        AirflowCoordinatorRequires,
+        AirflowCoordinatorCoreRequires,
         "can_write_airflow_config",
         new_callable=unittest.mock.PropertyMock,
         return_value=False,
@@ -122,13 +122,18 @@ def test_failed_airflow_config_write_pebble_error_scenario(
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             side_effect=ops.pebble.ConnectionError("Write failed"),
         ),
@@ -149,13 +154,18 @@ def test_failed_airflow_config_write_generic_exception_scenario(
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             side_effect=RuntimeError("Unexpected error"),
         ),
@@ -179,13 +189,18 @@ def test_replan_failure_scenario(context, state, container, api_server_relation)
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             return_value=None,
         ),
@@ -211,13 +226,18 @@ def test_active_status_flow_scenario(context, state, container, api_server_relat
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=False,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             return_value=None,
         ),
@@ -231,3 +251,4 @@ def test_active_status_flow_scenario(context, state, container, api_server_relat
     assert constants.SERVICE_NAME in layer.services
     assert layer.services[constants.SERVICE_NAME].command == "airflow api-server"
     assert layer.services[constants.SERVICE_NAME].startup == "enabled"
+    assert layer.services[constants.SERVICE_NAME].override == "replace"

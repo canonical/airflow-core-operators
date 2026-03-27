@@ -87,21 +87,20 @@ def test_config_change_propagates_and_dags_reserialize(
         juju, f"{constants.COORDINATOR_APP}/0", "load_examples", True
     )
 
+    juju.wait(jubilant.all_active, timeout=5 * 60)
     for component, app in constants.CORE_CHARMS.items():
-        juju.ssh(
-            f"{app}/0",
-            "pebble restart airflow",
-            container=constants.CONTAINER_NAMES[component]
-        )
-    juju.wait(jubilant.all_agents_idle, timeout=5 * 60)
-    
-    for component, app in constants.CORE_CHARMS.items():
-        config = read_airflow_config(
-            juju, f"{app}/0", constants.CONTAINER_NAMES[component]
-        )
-        assert config.get("core", "load_examples") == "True", (
-            f"Expected load_examples=True in {app} config"
-        )
+        for attempt in Retrying(
+            stop=stop_after_attempt(36),
+            wait=wait_fixed(10),
+            reraise=True,
+        ):
+            with attempt:
+                config = read_airflow_config(
+                    juju, f"{app}/0", constants.CONTAINER_NAMES[component]
+                )
+                assert config.get("core", "load_examples") == "True", (
+                    f"Expected load_examples=True in {app} config"
+                )
 
     juju.ssh(
         f"{constants.CORE_CHARMS['dag-processor']}/0",
@@ -146,17 +145,21 @@ def test_scheduler_scale_and_resilience(
         for unit_name, unit_status in status.apps[
             constants.CORE_CHARMS["scheduler"]
         ].units.items():
-            assert unit_status.is_active, (
-                f"{unit_name} should be active, got {unit_status.workload_status.current}"
-            )
-            assert pebble_service_is_running(
-                juju,
-                unit_name,
-                "scheduler",
-                constants.PEBBLE_SERVICE_NAME,
-            ), (
-                f"{unit_name}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
-            )
+            for attempt in Retrying(
+                stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True
+            ):
+                with attempt:
+                    assert unit_status.is_active, (
+                        f"{unit_name} should be active, got {unit_status.workload_status.current}"
+                    )
+                    assert pebble_service_is_running(
+                        juju,
+                        unit_name,
+                        "scheduler",
+                        constants.PEBBLE_SERVICE_NAME,
+                    ), (
+                        f"{unit_name}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
+                    )
 
             run_id = f"scale-{unit_name.replace('/', '-')}-{int(time.time())}"
             juju.ssh(

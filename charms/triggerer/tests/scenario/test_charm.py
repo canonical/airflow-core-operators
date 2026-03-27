@@ -2,7 +2,7 @@ import dataclasses
 import unittest.mock
 
 import ops
-from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
 
 import constants
 
@@ -95,7 +95,7 @@ def test_waiting_when_cannot_write_airflow_config(context, state, container, tri
     state_in = dataclasses.replace(state, relations=[triggerer_relation])
 
     with unittest.mock.patch.object(
-        AirflowCoordinatorRequires,
+        AirflowCoordinatorCoreRequires,
         "can_write_airflow_config",
         new_callable=unittest.mock.PropertyMock,
         return_value=False,
@@ -119,13 +119,18 @@ def test_failed_airflow_config_write_pebble_error_scenario(
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             side_effect=ops.pebble.ConnectionError("Write failed"),
         ),
@@ -146,13 +151,18 @@ def test_failed_airflow_config_write_generic_exception_scenario(
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             side_effect=RuntimeError("Unexpected error"),
         ),
@@ -167,18 +177,29 @@ def test_failed_airflow_config_write_generic_exception_scenario(
 def test_replan_failure_scenario_test(context, state, container, triggerer_relation):
     """Test BlockedStatus when Pebble replan fails."""
     state_in = dataclasses.replace(state, relations=[triggerer_relation])
+    fake_change = unittest.mock.Mock()
+    fake_change.id = "1"
+    fake_change.kind = "replan"
+    fake_change.summary = "replan failed"
+    fake_change.tasks = []
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires, "write_airflow_config", return_value=None
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires, "write_airflow_config", return_value=None
         ),
         unittest.mock.patch(
-            "ops.model.Container.replan", side_effect=ops.pebble.ChangeError("x", "y")
+            "ops.model.Container.replan",
+            side_effect=ops.pebble.ChangeError(err="x", change=fake_change),
         ),
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
@@ -198,13 +219,18 @@ def test_replan_failure_scenario(context, state, container, triggerer_relation):
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             return_value=None,
         ),
@@ -230,13 +256,18 @@ def test_active_status_flow_scenario(context, state, container, triggerer_relati
 
     with (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=False,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             return_value=None,
         ),
@@ -250,3 +281,59 @@ def test_active_status_flow_scenario(context, state, container, triggerer_relati
     assert constants.SERVICE_NAME in layer.services
     assert layer.services[constants.SERVICE_NAME].command == "airflow triggerer"
     assert layer.services[constants.SERVICE_NAME].startup == "enabled"
+    assert layer.services[constants.SERVICE_NAME].override == "replace"
+    assert layer.services[constants.SERVICE_NAME].user == "ubuntu"
+    assert layer.services[constants.SERVICE_NAME].group == "ubuntu"
+
+
+def test_restart_when_existing_config_changes(context, state, container, triggerer_relation):
+    """Restart service when existing config content changes."""
+    state_in = dataclasses.replace(state, relations=[triggerer_relation])
+
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "write_airflow_config",
+            return_value=None,
+        ),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock,
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    restart_mock.assert_called_once()
+
+
+def test_no_restart_when_config_unchanged(context, state, container, triggerer_relation):
+    """Do not restart when airflow config content is unchanged."""
+    state_in = dataclasses.replace(state, relations=[triggerer_relation])
+
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=False,
+        ),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock,
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    restart_mock.assert_not_called()

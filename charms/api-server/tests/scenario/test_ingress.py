@@ -9,7 +9,7 @@ import unittest.mock
 
 import ops
 import ops.testing
-from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorRequires
+from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 
 import constants
@@ -30,13 +30,13 @@ def _mock_coordinator_config():
     """Context manager that mocks the coordinator to allow config writes."""
     return (
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
             new_callable=unittest.mock.PropertyMock,
             return_value=True,
         ),
         unittest.mock.patch.object(
-            AirflowCoordinatorRequires,
+            AirflowCoordinatorCoreRequires,
             "write_airflow_config",
             return_value=None,
         ),
@@ -97,15 +97,16 @@ def test_ingress_requirer_initialized(context, state, container, api_server_rela
             assert isinstance(manager.charm._ingress, IngressPerAppRequirer)
 
 
-# ── Ingress ready event handler logs the URL ────────────────────────────
-
-
 def test_ingress_ready_event_logs_url(context, state, container, api_server_relation):
     """When the ingress ready event fires, the charm logs the URL."""
     ingress_rel = _ingress_relation(url="http://traefik:8080/test-airflow-api-server-k8s")
+    api_server_provides_rel = ops.testing.Relation(
+        "airflow-api-server",
+        remote_app_data={},
+    )
     state_in = dataclasses.replace(
         state,
-        relations=[api_server_relation, ingress_rel],
+        relations=[api_server_relation, ingress_rel, api_server_provides_rel],
         containers=[container],
     )
 
@@ -116,6 +117,10 @@ def test_ingress_ready_event_logs_url(context, state, container, api_server_rela
     # The charm should still be in a valid state after receiving the ingress ready event
     assert state_out.unit_status == ops.ActiveStatus()
 
+    # Verify ingress URL is shared via the airflow-api-server relation
+    api_server_provides_out = state_out.get_relations("airflow-api-server")[0]
+    assert api_server_provides_out.local_app_data.get("ingress_url") == "http://traefik:8080/test-airflow-api-server-k8s"
+
 
 # ── Ingress revoked event handler ──────────────────────────────────────
 
@@ -123,9 +128,14 @@ def test_ingress_ready_event_logs_url(context, state, container, api_server_rela
 def test_ingress_revoked_on_relation_broken(context, state, container, api_server_relation):
     """When the ingress relation is broken, the charm handles revocation gracefully."""
     ingress_rel = _ingress_relation(url="http://traefik:8080/test-airflow-api-server-k8s")
+    api_server_provides_rel = ops.testing.Relation(
+        "airflow-api-server",
+        local_app_data={"ingress_url": "http://traefik:8080/test-airflow-api-server-k8s"},
+        remote_app_data={},
+    )
     state_in = dataclasses.replace(
         state,
-        relations=[api_server_relation, ingress_rel],
+        relations=[api_server_relation, ingress_rel, api_server_provides_rel],
         containers=[container],
     )
 
@@ -135,3 +145,7 @@ def test_ingress_revoked_on_relation_broken(context, state, container, api_serve
 
     # Charm should not crash; still active because coordinator relation is present
     assert state_out.unit_status == ops.ActiveStatus()
+
+    # Verify ingress URL is cleared from the airflow-api-server relation
+    api_server_provides_out = state_out.get_relations("airflow-api-server")[0]
+    assert "ingress_url" not in api_server_provides_out.local_app_data

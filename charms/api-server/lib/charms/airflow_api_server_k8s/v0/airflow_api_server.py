@@ -62,11 +62,11 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 1
+LIBPATCH = 2
 
 HOST_KEY = "host"
 PORT_KEY = "port"
-PROTOCOL_KEY = "protocol"
+INGRESS_URL_KEY = "ingress_url"
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +80,12 @@ class AirflowAPIServerProvides(ops.Object):
         relation_name: str,
         host: str,
         port: str,
-        protocol: str = "http",
     ):
         super().__init__(charm, relation_name)
 
         self._charm = charm
+        self._relation_name = relation_name
         self._relation = charm.model.get_relation(relation_name)
-        self._protocol = protocol
 
         self._set_api_server_host_info(host, port)
 
@@ -105,7 +104,20 @@ class AirflowAPIServerProvides(ops.Object):
 
         self._relation.data[self._charm.app][HOST_KEY] = host
         self._relation.data[self._charm.app][PORT_KEY] = port
-        self._relation.data[self._charm.app][PROTOCOL_KEY] = self._protocol
+
+    def set_ingress_url(self, url: str) -> None:
+        """Write the ingress URL to the relation."""
+        relation = self._charm.model.get_relation(self._relation_name)
+        if not relation or not self._charm.unit.is_leader():
+            return
+        relation.data[self._charm.app][INGRESS_URL_KEY] = url
+
+    def clear_ingress_url(self) -> None:
+        """Remove the ingress URL from the relation."""
+        relation = self._charm.model.get_relation(self._relation_name)
+        if not relation or not self._charm.unit.is_leader():
+            return
+        relation.data[self._charm.app].pop(INGRESS_URL_KEY, None)
 
 
 class AirflowAPIServerRequires(ops.Object):
@@ -145,9 +157,8 @@ class AirflowAPIServerRequires(ops.Object):
         return self._relation.data[self._relation.app].get(PORT_KEY)
 
     @property
-    def api_server_protocol(self) -> typing.Optional[str]:
-        """Return API server protocol."""
+    def api_server_ingress_url(self) -> typing.Optional[str]:
+        """Return the API server's external ingress URL if available."""
         if not self._relation or not self._relation.app:
             return None
-
-        return self._relation.data[self._relation.app].get(PROTOCOL_KEY)
+        return self._relation.data[self._relation.app].get(INGRESS_URL_KEY)
