@@ -164,7 +164,9 @@ class AirflowDagProcessorCharm(ops.CharmBase):
                 self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
 
             if self._config_requires.can_write_tls_ca_chain:
-                self._config_requires.write_tls_ca_chains(constants.WORKLOAD_USER, constants.WORKLOAD_GROUP)
+                self._config_requires.write_tls_ca_chains(
+                    constants.WORKLOAD_USER, constants.WORKLOAD_GROUP
+                )
 
             self._add_layer_and_replan(restart_service=airflow_config_updated)
         except ExitWithStatusError as e:
