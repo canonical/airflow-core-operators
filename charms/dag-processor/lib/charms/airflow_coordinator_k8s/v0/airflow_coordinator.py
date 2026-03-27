@@ -165,7 +165,7 @@ LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 5
+LIBPATCH = 6
 
 
 logger = logging.getLogger(__name__)
@@ -265,12 +265,19 @@ SensitiveDataSecretStr = typing.Annotated[
 class AirflowCoordinatorProviderModel(data_interfaces.BaseCommonModel):
     """Provider side of the Airflow Coordinator model."""
 
-    config_template: str | None = pydantic.Field(default=None)
-    kubernetes_executor_pod_spec: str | None = pydantic.Field(default=None)
-    sensitive_data: SensitiveDataSecretStr = pydantic.Field(default=None)
-    secret_sensitive_data: data_interfaces.SecretString = pydantic.Field(default=None)
+    # FIXME: config_template accepts str | dict to support both Jinja2 templates
+    # (str from coordinator) and structured config dicts (from executor, deserialized
+    # by data_interfaces' get_data). This will change when we refactor the library
+    # to a much more generic one.
+    config_template: str | dict | None = None
+    kubernetes_executor_pod_spec: str | None = None
+    sensitive_data: SensitiveDataSecretStr = None
+    secret_sensitive_data: data_interfaces.SecretString | None = None
 
-    validation_failures: str | None = pydantic.Field(default=None)
+    validation_failures: str | None = None
+
+    # CA chains for Airflow connections
+    tls_ca_chains: dict[str, str] | None = None
 
     # hack to enable databag diff computation with data_interfaces v1 charm lib
     request_id: str = pydantic.Field(default="fixed_request_id", exclude=True)
@@ -543,7 +550,8 @@ class AirflowCoordinatorRequirerEventHandler(
             return self.interface.build_model(
                 self.relation.id, AirflowCoordinatorProviderModel, component=self.relation.app
             )
-        except pydantic.ValidationError:
+        except pydantic.ValidationError as e:
+            logger.error("VALIDATION ERROR: %s", e)
             return None
 
     @property
@@ -652,6 +660,7 @@ class AirflowCoordinatorProviderEventHandler(
         config_template: str = None,
         kubernetes_executor_pod_spec: str = None,
         sensitive_data: dict[str, str] = {},
+        tls_ca_chains: dict[str, str] = {},
     ):
         """Update data to send to related core charms."""
         if not self.interface.relations:
@@ -675,11 +684,12 @@ class AirflowCoordinatorProviderEventHandler(
                     if config_template:
                         model.config_template = config_template
 
-                    if kubernetes_executor_pod_spec:
-                        model.kubernetes_executor_pod_spec = kubernetes_executor_pod_spec
+                    model.kubernetes_executor_pod_spec = kubernetes_executor_pod_spec
 
                     if sensitive_data:
                         model.sensitive_data = json.dumps(sensitive_data)
+
+                    model.tls_ca_chains = tls_ca_chains
 
                     model.validation_failures = None
                 except pydantic.ValidationError:
@@ -690,6 +700,7 @@ class AirflowCoordinatorProviderEventHandler(
                     config_template=config_template,
                     kubernetes_executor_pod_spec=kubernetes_executor_pod_spec,
                     sensitive_data=json.dumps(sensitive_data),
+                    tls_ca_chains=tls_ca_chains,
                 )
 
             self.interface.write_model(relation.id, model)
@@ -995,6 +1006,28 @@ class AirflowCoordinatorCoreRequires(AirflowCoordinatorRequires):
             make_dirs=True,
         )
 
+    @property
+    def can_write_tls_ca_chain(self) -> bool:
+        """Indicate if there exist tls ca chains to write to workload container.
+
+        Ensures lack of validation errors + pebble is reachable in the workload
+        container + tls ca chains present in the relation.
+        """
+        return (
+            self._workload_container.can_connect()
+            and self._ready
+            and self._requirer_handler.provider_content.tls_ca_chains
+        )
+
+    def write_tls_ca_chains(self, user: str, group: str) -> None:
+        """Write available TLS CA chains to the workload container."""
+        provider_content = self._requirer_handler.provider_content
+
+        for filename, tls_ca_chain in provider_content.tls_ca_chains.items():
+            self._workload_container.push(
+                filename, tls_ca_chain, user=user, group=group, make_dirs=True
+            )
+
 
 class AirflowCoordinatorProvides(ops.Object):
     """A provider handler encapsulating the airflow coordinator relation."""
@@ -1137,6 +1170,7 @@ class AirflowCoordinatorProvides(ops.Object):
         config_template: typing.Optional[str] = None,
         k8s_executor_pod_spec_template: typing.Optional[str] = None,
         sensitive_data: dict[str, str] = {},
+        tls_ca_chains: dict[str, str] = {},
     ) -> None:
         """Update config with related core charms.
 
@@ -1145,9 +1179,11 @@ class AirflowCoordinatorProvides(ops.Object):
             k8s_executor_pod_spec_template: (optional) K8s executor pod spec template.
             sensitive_data: sensitive data to render config of k8s executor pod
                 spec jinja templates with.
+            tls_ca_chains: mapping from filename to tls ca chain file contents
         """
         self._provider_handler.update_content(
             config_template=config_template,
             kubernetes_executor_pod_spec=k8s_executor_pod_spec_template,
             sensitive_data=sensitive_data,
+            tls_ca_chains=tls_ca_chains,
         )

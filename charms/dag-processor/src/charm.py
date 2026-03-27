@@ -150,17 +150,23 @@ class AirflowDagProcessorCharm(ops.CharmBase):
         try:
             self._check_pebble_connection()
             self._check_required_relations()
+
             if not self._config_requires.can_write_airflow_config:
                 raise ExitWithStatusError(
                     "Waiting for relation data from coordinator",
                     ops.WaitingStatus,
                 )
-            restart_service = self._config_requires.airflow_config_needs_update(
+
+            airflow_config_updated = self._config_requires.airflow_config_needs_update(
                 config_path=constants.AIRFLOW_CONFIG_PATH
             )
-            if restart_service:
+            if airflow_config_updated:
                 self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
-            self._add_layer_and_replan(restart_service=restart_service)
+
+            if self._config_requires.can_write_tls_ca_chain:
+                self._config_requires.write_tls_ca_chains(constants.WORKLOAD_USER, constants.WORKLOAD_GROUP)
+
+            self._add_layer_and_replan(restart_service=airflow_config_updated)
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return
