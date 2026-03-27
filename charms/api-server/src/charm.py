@@ -79,6 +79,11 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Airflow API Server port."""
         return 8080
 
+    @property
+    def _ingress_path(self) -> str:
+        """Return the ingress path prefix used by Traefik for this app."""
+        return f"{self.model.name}-{self.app.name}"
+
     def _stop_service_and_remove_config(self) -> None:
         try:
             logger.info(f"Stopping service {constants.SERVICE_NAME}")
@@ -136,20 +141,26 @@ class AirflowApiServerCharm(ops.CharmBase):
             )
 
     @property
+    def _has_ingress(self) -> bool:
+        """Whether an ingress relation is active and has published a URL."""
+        return self._ingress.url is not None
+
+    @property
     def _api_server_layer(self) -> ops.pebble.LayerDict:
         """Define the Pebble layer for the workload."""
-        layer: ops.pebble.LayerDict = {
-            "services": {
-                constants.SERVICE_NAME: {
-                    "override": "replace",
-                    "summary": "A service that runs the api-server workload.",
-                    "command": "airflow api-server",
-                    "startup": "enabled",
-                    "user": constants.WORKLOAD_USER,
-                    "group": constants.WORKLOAD_GROUP,
-                }
-            }
+        command = "airflow api-server"
+        service: dict = {
+            "override": "replace",
+            "summary": "A service that runs the api-server workload.",
+            "command": command,
+            "startup": "enabled",
+            "user": constants.WORKLOAD_USER,
+            "group": constants.WORKLOAD_GROUP,
         }
+        if self._has_ingress:
+            service["command"] = f"{command} --proxy-headers"
+            service["environment"] = {"FORWARDED_ALLOW_IPS": "*"}
+        layer: ops.pebble.LayerDict = {"services": {constants.SERVICE_NAME: service}}
         return layer
 
     def _add_layer_and_replan(self, restart_service: bool = False) -> None:
@@ -181,12 +192,12 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent):
         logger.info("This app's ingress URL: %s", event.url)
-        self._api_server_provides.set_ingress_url(event.url)
+        self._api_server_provides.set_ingress_path(self._ingress_path)
         self._reconcile(event)
 
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent):
         logger.info("This app no longer has ingress")
-        self._api_server_provides.clear_ingress_url()
+        self._api_server_provides.clear_ingress_path()
         self._reconcile(event)
 
     def _reconcile(self, _) -> None:
@@ -208,12 +219,6 @@ class AirflowApiServerCharm(ops.CharmBase):
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return
-
-        # Ensure ingress URL is always shared when available
-        if self._ingress.url:
-            self._api_server_provides.set_ingress_url(self._ingress.url)
-        else:
-            self._api_server_provides.clear_ingress_url()
 
         self.unit.status = ops.ActiveStatus()
 

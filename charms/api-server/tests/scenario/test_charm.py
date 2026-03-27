@@ -254,6 +254,7 @@ def test_active_status_flow_scenario(context, state, container, api_server_relat
     assert layer.services[constants.SERVICE_NAME].override == "replace"
     assert layer.services[constants.SERVICE_NAME].user == "ubuntu"
     assert layer.services[constants.SERVICE_NAME].group == "ubuntu"
+    assert not layer.services[constants.SERVICE_NAME].environment
 
 
 def test_restart_when_existing_config_changes(context, state, container, api_server_relation):

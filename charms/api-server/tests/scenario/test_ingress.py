@@ -56,6 +56,8 @@ def test_active_status_with_ingress_relation(
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     layer = out_container.layers["api-server-base"]
     assert constants.SERVICE_NAME in layer.services
+    assert layer.services[constants.SERVICE_NAME].command == "airflow api-server"
+    assert not layer.services[constants.SERVICE_NAME].environment
 
 
 def test_active_status_without_ingress_relation(context, state, container, api_server_relation):
@@ -90,7 +92,7 @@ def test_ingress_requirer_initialized(context, state, container, api_server_rela
 
 
 def test_ingress_ready_event_logs_url(context, state, container, api_server_relation):
-    """When the ingress ready event fires, the charm logs the URL."""
+    """When the ingress ready event fires, the charm shares the ingress path."""
     ingress_rel = ingress_relation_with_url("http://traefik:8080/test-airflow-api-server-k8s")
     api_server_provides_rel = ops.testing.Relation(
         "airflow-api-server",
@@ -98,6 +100,7 @@ def test_ingress_ready_event_logs_url(context, state, container, api_server_rela
     )
     state_in = dataclasses.replace(
         state,
+        model=ops.testing.Model(name="test"),
         relations=[api_server_relation, ingress_rel, api_server_provides_rel],
         containers=[container],
     )
@@ -108,11 +111,17 @@ def test_ingress_ready_event_logs_url(context, state, container, api_server_rela
 
     assert state_out.unit_status == ops.ActiveStatus()
 
+    # Verify ingress path is shared via the airflow-api-server relation
     api_server_provides_out = state_out.get_relations("airflow-api-server")[0]
     assert (
-        api_server_provides_out.local_app_data.get("ingress_url")
-        == "http://traefik:8080/test-airflow-api-server-k8s"
+        api_server_provides_out.local_app_data.get("ingress_path") == "test-airflow-api-server-k8s"
     )
+
+    # Verify proxy-headers and environment are set when ingress is active
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
+    layer = out_container.layers["api-server-base"]
+    assert layer.services[constants.SERVICE_NAME].command == "airflow api-server --proxy-headers"
+    assert layer.services[constants.SERVICE_NAME].environment == {"FORWARDED_ALLOW_IPS": "*"}
 
 
 def test_ingress_revoked_on_relation_broken(context, state, container, api_server_relation):
@@ -120,7 +129,7 @@ def test_ingress_revoked_on_relation_broken(context, state, container, api_serve
     ingress_rel = ingress_relation_with_url("http://traefik:8080/test-airflow-api-server-k8s")
     api_server_provides_rel = ops.testing.Relation(
         "airflow-api-server",
-        local_app_data={"ingress_url": "http://traefik:8080/test-airflow-api-server-k8s"},
+        local_app_data={"ingress_path": "test-airflow-api-server-k8s"},
         remote_app_data={},
     )
     state_in = dataclasses.replace(
@@ -136,6 +145,12 @@ def test_ingress_revoked_on_relation_broken(context, state, container, api_serve
     # Charm should not crash; still active because coordinator relation is present
     assert state_out.unit_status == ops.ActiveStatus()
 
-    # Verify ingress URL is cleared from the airflow-api-server relation
+    # Verify ingress path is cleared from the airflow-api-server relation
     api_server_provides_out = state_out.get_relations("airflow-api-server")[0]
-    assert "ingress_url" not in api_server_provides_out.local_app_data
+    assert "ingress_path" not in api_server_provides_out.local_app_data
+
+    # Verify proxy-headers and environment are removed when ingress is revoked
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
+    layer = out_container.layers["api-server-base"]
+    assert layer.services[constants.SERVICE_NAME].command == "airflow api-server"
+    assert not layer.services[constants.SERVICE_NAME].environment
