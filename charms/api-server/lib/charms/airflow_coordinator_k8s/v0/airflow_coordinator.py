@@ -265,14 +265,10 @@ SensitiveDataSecretStr = typing.Annotated[
 class AirflowCoordinatorProviderModel(data_interfaces.BaseCommonModel):
     """Provider side of the Airflow Coordinator model."""
 
-    # FIXME: config_template accepts str | dict to support both Jinja2 templates
-    # (str from coordinator) and structured config dicts (from executor, deserialized
-    # by data_interfaces' get_data). This will change when we refactor the library
-    # to a much more generic one.
-    config_template: str | dict | None = pydantic.Field(default=None)
+    config_template: str | None = pydantic.Field(default=None)
     kubernetes_executor_pod_spec: str | None = pydantic.Field(default=None)
     sensitive_data: SensitiveDataSecretStr = pydantic.Field(default=None)
-    secret_sensitive_data: data_interfaces.SecretString | None = pydantic.Field(default=None)
+    secret_sensitive_data: data_interfaces.SecretString = pydantic.Field(default=None)
 
     validation_failures: str | None = pydantic.Field(default=None)
 
@@ -547,8 +543,7 @@ class AirflowCoordinatorRequirerEventHandler(
             return self.interface.build_model(
                 self.relation.id, AirflowCoordinatorProviderModel, component=self.relation.app
             )
-        except pydantic.ValidationError as e:
-            logger.error("VALIDATION ERROR: %s", e)
+        except pydantic.ValidationError:
             return None
 
     @property
@@ -680,7 +675,8 @@ class AirflowCoordinatorProviderEventHandler(
                     if config_template:
                         model.config_template = config_template
 
-                    model.kubernetes_executor_pod_spec = kubernetes_executor_pod_spec
+                    if kubernetes_executor_pod_spec:
+                        model.kubernetes_executor_pod_spec = kubernetes_executor_pod_spec
 
                     if sensitive_data:
                         model.sensitive_data = json.dumps(sensitive_data)
