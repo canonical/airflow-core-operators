@@ -10,6 +10,7 @@ resource "juju_application" "airflow_scheduler_k8s" {
 
   constraints = var.constraints
   config      = var.config
+  trust       = var.trust
 
   units = var.units
 }

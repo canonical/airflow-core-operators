@@ -21,6 +21,7 @@ The module offers the following configurable inputs:
 | `channel` | string | Channel that the charm is deployed from | False |
 | `constraints` | string | Constraints to deploy the charm with | False |
 | `config` | map(string) | Map of the charm configuration options | False |
+| `trust` | bool | Whether the charm is trusted | False |
 
 ### Outputs
 Upon applied, the module exports the following outputs:
