@@ -91,8 +91,8 @@ def test_ingress_requirer_initialized(context, state, container, api_server_rela
             assert isinstance(manager.charm._ingress, IngressPerAppRequirer)
 
 
-def test_ingress_ready_event_logs_url(context, state, container, api_server_relation):
-    """When the ingress ready event fires, the charm shares the ingress path."""
+def test_ingress_ready_path_routing(context, state, container, api_server_relation):
+    """With path-based routing, the charm extracts and shares the ingress path."""
     ingress_rel = ingress_relation_with_url("http://traefik:8080/test-airflow-api-server-k8s")
     api_server_provides_rel = ops.testing.Relation(
         "airflow-api-server",
@@ -100,7 +100,6 @@ def test_ingress_ready_event_logs_url(context, state, container, api_server_rela
     )
     state_in = dataclasses.replace(
         state,
-        model=ops.testing.Model(name="test"),
         relations=[api_server_relation, ingress_rel, api_server_provides_rel],
         containers=[container],
     )
@@ -118,6 +117,38 @@ def test_ingress_ready_event_logs_url(context, state, container, api_server_rela
     )
 
     # Verify proxy-headers and environment are set when ingress is active
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
+    layer = out_container.layers["api-server-base"]
+    assert layer.services[constants.SERVICE_NAME].command == "airflow api-server --proxy-headers"
+    assert layer.services[constants.SERVICE_NAME].environment == {"FORWARDED_ALLOW_IPS": "*"}
+
+
+def test_ingress_ready_subdomain_routing(context, state, container, api_server_relation):
+    """With subdomain-based routing, no path is shared."""
+    ingress_rel = ingress_relation_with_url(
+        "http://test-airflow-api-server-k8s.example.com/"
+    )
+    api_server_provides_rel = ops.testing.Relation(
+        "airflow-api-server",
+        remote_app_data={},
+    )
+    state_in = dataclasses.replace(
+        state,
+        relations=[api_server_relation, ingress_rel, api_server_provides_rel],
+        containers=[container],
+    )
+
+    mock_can_write, mock_needs_update, mock_write = _mock_coordinator_config()
+    with mock_can_write, mock_needs_update, mock_write:
+        state_out = context.run(context.on.relation_changed(ingress_rel), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+
+    # Verify no ingress path is shared (subdomain routing has no path prefix)
+    api_server_provides_out = state_out.get_relations("airflow-api-server")[0]
+    assert "ingress_path" not in api_server_provides_out.local_app_data
+
+    # Verify proxy-headers and environment are still set (ingress is active)
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     layer = out_container.layers["api-server-base"]
     assert layer.services[constants.SERVICE_NAME].command == "airflow api-server --proxy-headers"

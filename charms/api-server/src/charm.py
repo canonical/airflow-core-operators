@@ -5,6 +5,7 @@
 """Charm the Airflow API Server."""
 
 import logging
+from urllib.parse import urlparse
 
 import ops
 from charms.airflow_api_server_k8s.v0.airflow_api_server import AirflowAPIServerProvides
@@ -79,10 +80,15 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Airflow API Server port."""
         return 8080
 
-    @property
-    def _ingress_path(self) -> str:
-        """Return the ingress path prefix used by Traefik for this app."""
-        return f"{self.model.name}-{self.app.name}"
+    @staticmethod
+    def _extract_ingress_path(url: str) -> str | None:
+        """Extract the path prefix from an ingress URL, if present.
+
+        Returns the path (without leading slash) for path-based routing,
+        or None for subdomain-based routing (no meaningful path).
+        """
+        path = urlparse(url).path.strip("/")
+        return path or None
 
     def _stop_service_and_remove_config(self) -> None:
         try:
@@ -192,7 +198,11 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _on_ingress_ready(self, event: IngressPerAppReadyEvent):
         logger.info("This app's ingress URL: %s", event.url)
-        self._api_server_provides.set_ingress_path(self._ingress_path)
+        ingress_path = self._extract_ingress_path(event.url)
+        if ingress_path:
+            self._api_server_provides.set_ingress_path(ingress_path)
+        else:
+            self._api_server_provides.clear_ingress_path()
         self._reconcile(event)
 
     def _on_ingress_revoked(self, event: IngressPerAppRevokedEvent):
