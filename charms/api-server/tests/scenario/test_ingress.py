@@ -125,9 +125,7 @@ def test_ingress_ready_path_routing(context, state, container, api_server_relati
 
 def test_ingress_ready_subdomain_routing(context, state, container, api_server_relation):
     """With subdomain-based routing, no path is shared."""
-    ingress_rel = ingress_relation_with_url(
-        "http://test-airflow-api-server-k8s.example.com/"
-    )
+    ingress_rel = ingress_relation_with_url("http://test-airflow-api-server-k8s.example.com/")
     api_server_provides_rel = ops.testing.Relation(
         "airflow-api-server",
         remote_app_data={},
