@@ -5,6 +5,7 @@
 """Charm the Airflow API Server."""
 
 import logging
+from urllib.parse import urlparse
 
 import ops
 from charms.airflow_api_server_k8s.v0.airflow_api_server import AirflowAPIServerProvides
@@ -51,6 +52,7 @@ class AirflowApiServerCharm(ops.CharmBase):
             self,
             host=self._airflow_api_server_host,
             port=self._airflow_api_server_port,
+            strip_prefix=False,
         )
         self._api_server_provides = AirflowAPIServerProvides(
             self,
@@ -73,6 +75,16 @@ class AirflowApiServerCharm(ops.CharmBase):
     def _airflow_api_server_port(self) -> int:
         """Airflow API Server port."""
         return 8080
+
+    @staticmethod
+    def _extract_ingress_path(url: str) -> str | None:
+        """Extract the path prefix from an ingress URL, if present.
+
+        Returns the path (without leading slash) for path-based routing,
+        or None for subdomain-based routing (no meaningful path).
+        """
+        path = urlparse(url).path.strip("/")
+        return path or None
 
     def _stop_service_and_remove_config(self) -> None:
         try:
@@ -174,6 +186,7 @@ class AirflowApiServerCharm(ops.CharmBase):
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
             )
+
 
     def _reconcile(self, _) -> None:
         """Reconcile the charm state."""
