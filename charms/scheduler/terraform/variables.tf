@@ -33,6 +33,12 @@ variable "revision" {
   default     = null
 }
 
+variable "trust" {
+  type        = bool
+  description = "Whether to trust the application with cluster-wide access"
+  default     = false
+}
+
 variable "units" {
   type        = number
   description = "Number of units to deploy with this name and configuration"
