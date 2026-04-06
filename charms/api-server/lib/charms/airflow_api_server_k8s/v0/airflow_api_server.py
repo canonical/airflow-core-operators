@@ -39,7 +39,7 @@ class AirflowAPIServerCharm(ops.CharmBase):
     def __init__(self, *args) -> None:
         super().__init__(*args)
 
-        self.requirer = airflow_api_server.AirflowAPIServerProviders(
+        self.requirer = airflow_api_server.AirflowAPIServerProvides(
             self,
             "airflow-api-server", # relation endpoint
             "airflow-api-server-k8s-endpoints.airflow-model.svc.cluster.local", # host
