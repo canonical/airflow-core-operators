@@ -10,7 +10,9 @@ from urllib.parse import urlparse
 import ops
 from charms.airflow_api_server_k8s.v0.airflow_api_server import AirflowAPIServerProvides
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
-from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
+from charms.traefik_k8s.v2.ingress import (
+    IngressPerAppRequirer,
+)
 
 import constants
 
@@ -76,16 +78,6 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Airflow API Server port."""
         return 8080
 
-    @staticmethod
-    def _extract_ingress_path(url: str) -> str | None:
-        """Extract the path prefix from an ingress URL, if present.
-
-        Returns the path (without leading slash) for path-based routing,
-        or None for subdomain-based routing (no meaningful path).
-        """
-        path = urlparse(url).path.strip("/")
-        return path or None
-
     def _stop_service_and_remove_config(self) -> None:
         try:
             logger.info(f"Stopping service {constants.SERVICE_NAME}")
@@ -114,6 +106,19 @@ class AirflowApiServerCharm(ops.CharmBase):
                 "Missing airflow-coordinator relation",
                 ops.BlockedStatus,
             )
+
+    def _handle_ingress(self) -> None:
+        """Extract the ingress path and share it to configure Airflow's base_url.
+
+        The extracted path is passed to the airflow-coordinator, which uses it
+        to construct the global `base_url` configuration for the Airflow cluster.
+        """
+        if self._ingress.url is not None:
+            self._api_server_provides.set_ingress_path(
+                urlparse(self._ingress.url).path.strip("/") or None
+            )
+        else:
+            self._api_server_provides.clear_ingress_path()
 
     def _write_airflow_config(self, config_path: str) -> None:
         """Write configuration files to the workload."""
@@ -154,9 +159,11 @@ class AirflowApiServerCharm(ops.CharmBase):
             "user": constants.WORKLOAD_USER,
             "group": constants.WORKLOAD_GROUP,
         }
+
         if self._ingress.url is not None:
             service["command"] = f"{command} --proxy-headers"
             service["environment"] = {"FORWARDED_ALLOW_IPS": "*"}
+
         layer: ops.pebble.LayerDict = {"services": {constants.SERVICE_NAME: service}}
         return layer
 
@@ -187,12 +194,12 @@ class AirflowApiServerCharm(ops.CharmBase):
                 ops.BlockedStatus,
             )
 
-
     def _reconcile(self, _) -> None:
         """Reconcile the charm state."""
         try:
             self._check_pebble_connection()
             self._check_required_relations()
+            self._handle_ingress()
             if not self._config_requires.can_write_airflow_config:
                 raise ExitWithStatusError(
                     "Waiting for relation data from coordinator",
