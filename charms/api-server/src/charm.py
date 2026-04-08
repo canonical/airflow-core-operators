@@ -111,6 +111,11 @@ class AirflowApiServerCharm(ops.CharmBase):
 
         The extracted path is passed to the airflow-coordinator, which uses it
         to construct the global `base_url` configuration for the Airflow cluster.
+
+        - Clears the path if the relation is broken or unready.
+        - Extracts the path prefix (for routing_mode=path) from the
+           URL and sets it in the relation databag.
+        - Clears the path if the extracted path is empty (for routing_mode=subdomain).
         """
         if (
             not self.model.get_relation(constants.TRAEFIK_INGRESS_RELATION_ENDPOINT)
@@ -163,8 +168,12 @@ class AirflowApiServerCharm(ops.CharmBase):
             "group": constants.WORKLOAD_GROUP,
         }
 
-        if self._ingress.url is not None:
+        if self._ingress.url:
             service["command"] += " --proxy-headers"
+            # Using the '*' wildcard prevents a brute-force cycle of restarting the
+            # Airflow API server every time the proxy IP changes.
+            # This is safe because traffic reaching this container is already
+            # gated by the cluster's internal network and the Ingress controller.
             service["environment"] = {"FORWARDED_ALLOW_IPS": "*"}
 
         layer: ops.pebble.LayerDict = {"services": {constants.SERVICE_NAME: service}}
