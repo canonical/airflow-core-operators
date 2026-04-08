@@ -170,3 +170,39 @@ def test_non_leader_does_not_set_ingress_path(context, state, container, api_ser
 
     api_server_provides_out = state_out.get_relations("airflow-api-server")[0]
     assert "ingress_path" not in api_server_provides_out.local_app_data
+
+
+def test_restart_when_ingress_layer_changes(context, state, container, api_server_relation):
+    """Service is restarted after the pebble layer changes with proxy-headers + env var."""
+    ingress_rel = ingress_relation_with_url("http://traefik:8080/test-airflow-api-server-k8s")
+    api_server_provides_rel = ops.testing.Relation(
+        "airflow-api-server",
+        remote_app_data={},
+    )
+    state_in = dataclasses.replace(
+        state,
+        leader=True,
+        relations=[api_server_relation, ingress_rel, api_server_provides_rel],
+        containers=[container],
+    )
+
+    mock_can_write, mock_needs_update, mock_write = _mock_coordinator_config()
+    with (
+        mock_can_write,
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=True,
+        ),
+        mock_write,
+        unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock,
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    restart_mock.assert_called_once()
+
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
+    layer = out_container.layers["api-server-base"]
+    assert layer.services[constants.SERVICE_NAME].command == "airflow api-server --proxy-headers"
+    assert layer.services[constants.SERVICE_NAME].environment == {"FORWARDED_ALLOW_IPS": "*"}

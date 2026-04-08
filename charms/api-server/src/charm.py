@@ -54,7 +54,6 @@ class AirflowApiServerCharm(ops.CharmBase):
             self,
             host=self._airflow_api_server_host,
             port=self._airflow_api_server_port,
-            strip_prefix=False,
         )
         self._api_server_provides = AirflowAPIServerProvides(
             self,
@@ -113,15 +112,20 @@ class AirflowApiServerCharm(ops.CharmBase):
         The extracted path is passed to the airflow-coordinator, which uses it
         to construct the global `base_url` configuration for the Airflow cluster.
         """
-        if self._ingress.url is not None:
-            self._api_server_provides.set_ingress_path(
-                urlparse(self._ingress.url).path.strip("/") or None
-            )
+        if (
+            not self.model.get_relation(constants.TRAEFIK_INGRESS_RELATION_ENDPOINT)
+            or not self._ingress.url
+        ):
+            self._api_server_provides.clear_ingress_path()
+            return
+        ingress_path = urlparse(self._ingress.url).path.strip("/") or None
+        if ingress_path:
+            self._api_server_provides.set_ingress_path(ingress_path)
         else:
             self._api_server_provides.clear_ingress_path()
 
     def _write_airflow_config(self, config_path: str) -> None:
-        """Write configuration files to the workload."""
+        """Write configuration files to the workload container."""
         if not self._config_requires.can_write_airflow_config:
             raise ExitWithStatusError(
                 "Waiting for relation data from coordinator",
@@ -150,18 +154,17 @@ class AirflowApiServerCharm(ops.CharmBase):
     @property
     def _api_server_layer(self) -> ops.pebble.LayerDict:
         """Define the Pebble layer for the workload."""
-        command = "airflow api-server"
         service: dict = {
             "override": "replace",
             "summary": "A service that runs the api-server workload.",
-            "command": command,
+            "command": "airflow api-server",
             "startup": "enabled",
             "user": constants.WORKLOAD_USER,
             "group": constants.WORKLOAD_GROUP,
         }
 
         if self._ingress.url is not None:
-            service["command"] = f"{command} --proxy-headers"
+            service["command"] += " --proxy-headers"
             service["environment"] = {"FORWARDED_ALLOW_IPS": "*"}
 
         layer: ops.pebble.LayerDict = {"services": {constants.SERVICE_NAME: service}}
@@ -198,8 +201,8 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Reconcile the charm state."""
         try:
             self._check_pebble_connection()
-            self._check_required_relations()
             self._handle_ingress()
+            self._check_required_relations()
             if not self._config_requires.can_write_airflow_config:
                 raise ExitWithStatusError(
                     "Waiting for relation data from coordinator",
