@@ -104,6 +104,18 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
 
     juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
 
+@pytest.fixture(scope="module")
+def ingress_stack(juju: jubilant.Juju, deployed_stack):
+    """Deploy Traefik and integrate it with the API server."""
+    juju.deploy(constants.TRAEFIK_APP, app=constants.TRAEFIK_APP, trust=True)
+    juju.wait(
+        lambda status: status.apps.get(constants.TRAEFIK_APP, jubilant.AppStatus()).is_active,
+        timeout=5 * 60,
+    )
+
+    juju.integrate(f"{constants.CORE_CHARMS['api-server']}:ingress", f"{constants.TRAEFIK_APP}:ingress")
+    juju.wait(jubilant.all_active, timeout=5 * 60, successes=2, delay=10)
+
 
 @pytest.fixture(autouse=True)
 def invariant_checker(juju: jubilant.Juju):
@@ -175,6 +187,19 @@ def get_pebble_service_status(
         f"Service '{service_name}' not found in Pebble services output for {unit}.\n"
         f"Output:\n{services_text}"
     )
+
+
+def get_pebble_plan(
+    juju: jubilant.Juju,
+    unit: str,
+    component: str,
+) -> dict:
+    """Return the full Pebble plan as a dict for a unit container."""
+    import yaml
+
+    container = constants.CONTAINER_NAMES[component]
+    plan_text = juju.ssh(unit, "pebble plan", container=container)
+    return yaml.safe_load(plan_text) or {}
 
 
 def push_text_file(
