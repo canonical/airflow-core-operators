@@ -17,11 +17,10 @@ as an ingress-per-app reverse proxy.  Focus areas:
 """
 
 import json
-import logging
 from urllib.parse import urlparse
 
 import jubilant
-import shlex
+import requests
 from tenacity import Retrying, stop_after_attempt, wait_fixed
 
 from tests.integration.conftest import (
@@ -31,9 +30,9 @@ from tests.integration.conftest import (
 from tests.integration.helpers.airflow_helpers import read_airflow_config
 import tests.integration.helpers.constants as constants
 
-logger = logging.getLogger(__name__)
 
 SUBDOMAIN_EXTERNAL_HOSTNAME = "airflow.nip.io"
+
 
 def _get_traefik_proxied_url(juju: jubilant.Juju) -> str:
     """Retrieve the proxied endpoint URL for the API server via ``show-proxied-endpoints``."""
@@ -108,16 +107,19 @@ def test_health_via_ingress_url(juju: jubilant.Juju, ingress_stack):
         stop=stop_after_attempt(10), wait=wait_fixed(5), reraise=True
     ):
         with attempt:
-            check_cmd = f"curl -s {health_url} || true"
-            out = juju.ssh(
-                f"{constants.CORE_CHARMS['api-server']}/0", "bash -lc " + shlex.quote(check_cmd)
+            response = requests.get(
+                health_url,
+                headers={"Accept": "application/json"},
+                verify=False,
+                timeout=10,
             )
-            health = json.loads(out)
+            assert response.status_code == 200, (
+                f"Health endpoint failed with {response.status_code}: {response.text}"
+            )
+            health = response.json()
             assert all(v["status"] == "healthy" for v in health.values()), (
-                f"API unhealthy from localhost:\n{out}"
+                f"API unhealthy from localhost:\n{health}"
             )
-
-    logger.info("Health check via ingress succeeded: %s", health)
 
 
 def test_ingress_path_based_routing(juju: jubilant.Juju, ingress_stack):
@@ -130,13 +132,12 @@ def test_ingress_path_based_routing(juju: jubilant.Juju, ingress_stack):
     ingress_path = urlparse(url).path.strip("/")
     assert ingress_path, f"Expected a path component in the proxied URL, got: {url}"
 
-    base_url = _get_base_url(juju)
     # TODO enable this assertion once PR #34 in coordinator repo is merged
+    # base_url = _get_base_url(juju)
     # assert ingress_path in base_url, (
     #     f"[path mode] Expected '{ingress_path}' in base_url, got: '{base_url}'"
     # )
     _assert_pebble_has_proxy_flags(juju)
-    logger.info("Step 1 (path mode): base_url=%s, pebble OK", base_url)
 
 
 def test_ingress_relation_broken(juju: jubilant.Juju, ingress_stack):
@@ -162,7 +163,6 @@ def test_ingress_relation_broken(juju: jubilant.Juju, ingress_stack):
         "api-server",
         constants.PEBBLE_SERVICE_NAME,
     )
-    logger.info("Step 4 (relation removed): base_url=%s, pebble reverted", base_url)
 
 
 def test_ingress_subdomain_mode(juju: jubilant.Juju, ingress_stack):
@@ -184,4 +184,3 @@ def test_ingress_subdomain_mode(juju: jubilant.Juju, ingress_stack):
         f"[subdomain mode] base_url should NOT contain '{ingress_path}', got: '{base_url}'"
     )
     _assert_pebble_has_proxy_flags(juju)
-    logger.info("Step 2 (subdomain mode): base_url=%s, pebble OK", base_url)
