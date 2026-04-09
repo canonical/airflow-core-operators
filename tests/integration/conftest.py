@@ -118,6 +118,21 @@ def ingress_stack(juju: jubilant.Juju, deployed_stack):
     juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
 
 
+@pytest.fixture(scope="module")
+def ingress_with_tls_termination_stack(juju: jubilant.Juju, ingress_stack):
+    """Deploy self-signed certificates and integrate it with the traefik-k8s."""
+    juju.deploy(
+        constants.SELF_SIGNED_CERTS_APP, app=constants.SELF_SIGNED_CERTS_APP, trust=True
+    )
+    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
+
+    juju.integrate(
+        f"{constants.TRAEFIK_APP}:certificates",
+        f"{constants.SELF_SIGNED_CERTS_APP}:certificates",
+    )
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
+
+
 @pytest.fixture(autouse=True)
 def invariant_checker(juju: jubilant.Juju):
     """Fail fast when core app invariants are broken before or after tests."""

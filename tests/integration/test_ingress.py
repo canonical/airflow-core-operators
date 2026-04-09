@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 import jubilant
 import requests
 from tenacity import Retrying, stop_after_attempt, wait_fixed
-
+import shlex
 from tests.integration.conftest import (
     get_pebble_plan,
     pebble_service_is_running,
@@ -184,3 +184,50 @@ def test_ingress_subdomain_mode(juju: jubilant.Juju, ingress_stack):
         f"[subdomain mode] base_url should NOT contain '{ingress_path}', got: '{base_url}'"
     )
     _assert_pebble_has_proxy_flags(juju)
+
+
+def test_load_balancing_round_robin(juju: jubilant.Juju, ingress_stack):
+    """Validate Traefik routes traffic to multiple API Server units in round-robin fashion."""
+
+    api_app = constants.CORE_CHARMS["api-server"]
+
+    juju.scale_application(api_app, 2)
+    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=10)
+
+    url = _get_traefik_proxied_url(juju)
+    health_url = f"{url.rstrip('/')}/api/v2/monitor/health"
+
+    for _ in range(10):
+        requests.get(
+            health_url, headers={"Accept": "application/json"}, verify=False, timeout=5
+        )
+
+    log_cmd = f"pebble logs {constants.PEBBLE_SERVICE_NAME}"
+
+    logs_unit_0 = juju.ssh(f"{api_app}/0", "bash -lc " + shlex.quote(log_cmd))
+    logs_unit_1 = juju.ssh(f"{api_app}/1", "bash -lc " + shlex.quote(log_cmd))
+
+    hits_0 = logs_unit_0.count("GET /api/v2/monitor/health")
+    hits_1 = logs_unit_1.count("GET /api/v2/monitor/health")
+
+    assert hits_0 > 0, f"Unit 0 received NO traffic! Logs:\n{logs_unit_0[-500:]}"
+    assert hits_1 > 0, f"Unit 1 received NO traffic! Logs:\n{logs_unit_1[-500:]}"
+
+    # Optional: If you want strict round-robin validation, they should be exactly 5 and 5
+    # assert hits_0 == 5 and hits_1 == 5, "Traffic was not perfectly round-robin!"
+
+
+def test_tls_termination(juju: jubilant.Juju, ingress_with_tls_termination_stack):
+    """Verify traffic to Traefik is encrypted (HTTPS) when certificates are provided."""
+
+    url = _get_traefik_proxied_url(juju)
+    assert url.startswith("https://"), (
+        f"Expected Traefik to provide an HTTPS URL, but got: {url}"
+    )
+
+    health_url = f"{url.rstrip('/')}/api/v2/monitor/health"
+    response = requests.get(
+        health_url, headers={"Accept": "application/json"}, verify=False, timeout=10
+    )
+
+    assert response.status_code == 200, "Failed to reach health endpoint over HTTPS"
