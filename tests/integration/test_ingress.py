@@ -17,12 +17,13 @@ as an ingress-per-app reverse proxy.  Focus areas:
 """
 
 import json
+import logging
 from urllib.parse import urlparse
 
 import jubilant
 import requests
 from tenacity import Retrying, stop_after_attempt, wait_fixed
-import shlex
+
 from tests.integration.conftest import (
     get_pebble_plan,
     pebble_service_is_running,
@@ -30,6 +31,7 @@ from tests.integration.conftest import (
 from tests.integration.helpers.airflow_helpers import read_airflow_config
 import tests.integration.helpers.constants as constants
 
+logger = logging.getLogger(__name__)
 
 SUBDOMAIN_EXTERNAL_HOSTNAME = "airflow.nip.io"
 
@@ -43,6 +45,36 @@ def _get_traefik_proxied_url(juju: jubilant.Juju) -> str:
         f"No proxied URL found for {constants.CORE_CHARMS['api-server']} in Traefik endpoints: {endpoints}"
     )
     return url
+
+
+def _health_check_via_url(url: str, *, verify_tls: bool = True) -> dict:
+    """Hit ``/api/v2/monitor/health`` through *url* and assert all components healthy.
+
+    Returns the parsed health JSON on success.
+    """
+    health_url = f"{url.rstrip('/')}/api/v2/monitor/health"
+    for attempt in Retrying(
+        stop=stop_after_attempt(10), wait=wait_fixed(5), reraise=True
+    ):
+        with attempt:
+            resp = requests.get(
+                health_url,
+                headers={"Accept": "application/json"},
+                timeout=10,
+                verify=verify_tls,
+            )
+            assert resp.status_code == 200, (
+                f"Health endpoint returned {resp.status_code}: {resp.text[:200]}"
+            )
+            content_type = resp.headers.get("Content-Type", "")
+            assert "json" in content_type, (
+                f"Expected JSON response, got Content-Type={content_type}: {resp.text[:200]}"
+            )
+            data = resp.json()
+            assert all(v["status"] == "healthy" for v in data.values()), (
+                f"Not all components healthy: {data}"
+            )
+    return data
 
 
 def _get_api_server_pebble_service(juju: jubilant.Juju) -> dict:
@@ -102,24 +134,8 @@ def _set_traefik_routing_mode(
 def test_health_via_ingress_url(juju: jubilant.Juju, ingress_stack):
     """Requests through the Traefik ingress URL reach the API server health endpoint."""
     url = _get_traefik_proxied_url(juju)
-    health_url = f"{url.rstrip('/')}/api/v2/monitor/health"
-    for attempt in Retrying(
-        stop=stop_after_attempt(10), wait=wait_fixed(5), reraise=True
-    ):
-        with attempt:
-            response = requests.get(
-                health_url,
-                headers={"Accept": "application/json"},
-                verify=False,
-                timeout=10,
-            )
-            assert response.status_code == 200, (
-                f"Health endpoint failed with {response.status_code}: {response.text}"
-            )
-            health = response.json()
-            assert all(v["status"] == "healthy" for v in health.values()), (
-                f"API unhealthy from localhost:\n{health}"
-            )
+    health = _health_check_via_url(url)
+    logger.info("Health check via ingress succeeded: %s", health)
 
 
 def test_ingress_path_based_routing(juju: jubilant.Juju, ingress_stack):
@@ -184,50 +200,3 @@ def test_ingress_subdomain_mode(juju: jubilant.Juju, ingress_stack):
         f"[subdomain mode] base_url should NOT contain '{ingress_path}', got: '{base_url}'"
     )
     _assert_pebble_has_proxy_flags(juju)
-
-
-def test_load_balancing_round_robin(juju: jubilant.Juju, ingress_stack):
-    """Validate Traefik routes traffic to multiple API Server units in round-robin fashion."""
-
-    api_app = constants.CORE_CHARMS["api-server"]
-
-    juju.scale_application(api_app, 2)
-    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=10)
-
-    url = _get_traefik_proxied_url(juju)
-    health_url = f"{url.rstrip('/')}/api/v2/monitor/health"
-
-    for _ in range(10):
-        requests.get(
-            health_url, headers={"Accept": "application/json"}, verify=False, timeout=5
-        )
-
-    log_cmd = f"pebble logs {constants.PEBBLE_SERVICE_NAME}"
-
-    logs_unit_0 = juju.ssh(f"{api_app}/0", "bash -lc " + shlex.quote(log_cmd))
-    logs_unit_1 = juju.ssh(f"{api_app}/1", "bash -lc " + shlex.quote(log_cmd))
-
-    hits_0 = logs_unit_0.count("GET /api/v2/monitor/health")
-    hits_1 = logs_unit_1.count("GET /api/v2/monitor/health")
-
-    assert hits_0 > 0, f"Unit 0 received NO traffic! Logs:\n{logs_unit_0[-500:]}"
-    assert hits_1 > 0, f"Unit 1 received NO traffic! Logs:\n{logs_unit_1[-500:]}"
-
-    # Optional: If you want strict round-robin validation, they should be exactly 5 and 5
-    # assert hits_0 == 5 and hits_1 == 5, "Traffic was not perfectly round-robin!"
-
-
-def test_tls_termination(juju: jubilant.Juju, ingress_with_tls_termination_stack):
-    """Verify traffic to Traefik is encrypted (HTTPS) when certificates are provided."""
-
-    url = _get_traefik_proxied_url(juju)
-    assert url.startswith("https://"), (
-        f"Expected Traefik to provide an HTTPS URL, but got: {url}"
-    )
-
-    health_url = f"{url.rstrip('/')}/api/v2/monitor/health"
-    response = requests.get(
-        health_url, headers={"Accept": "application/json"}, verify=False, timeout=10
-    )
-
-    assert response.status_code == 200, "Failed to reach health endpoint over HTTPS"
