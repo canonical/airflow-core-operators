@@ -108,13 +108,10 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
 def ingress_stack(juju: jubilant.Juju, deployed_stack):
     """Deploy Traefik and integrate it with the API server."""
     juju.deploy(constants.TRAEFIK_APP, app=constants.TRAEFIK_APP, trust=True)
-    juju.wait(
-        lambda status: status.apps.get(constants.TRAEFIK_APP, jubilant.AppStatus()).is_active,
-        timeout=5 * 60,
-    )
+    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
 
     juju.integrate(f"{constants.CORE_CHARMS['api-server']}:ingress", f"{constants.TRAEFIK_APP}:ingress")
-    juju.wait(jubilant.all_active, timeout=5 * 60, successes=2, delay=10)
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
 
 
 @pytest.fixture(autouse=True)
