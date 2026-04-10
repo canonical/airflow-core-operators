@@ -58,7 +58,6 @@ POSTGRES_APP = "postgresql-k8s"
 PGBOUNCER_APP = "pgbouncer-k8s"
 COORDINATOR_APP = "airflow-coordinator-k8s"
 TRAEFIK_APP = "traefik-k8s"
-SELF_SIGNED_CERTS_APP = "self-signed-certificates"
 
 
 ALL_APPS = [POSTGRES_APP, PGBOUNCER_APP, COORDINATOR_APP] + list(CORE_APPS)
