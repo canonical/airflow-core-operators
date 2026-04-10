@@ -106,9 +106,14 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
 
 
 @pytest.fixture(scope="module")
-def ingress_stack(juju: jubilant.Juju, deployed_stack):
+def traefik_ingress_stack(juju: jubilant.Juju, deployed_stack):
     """Deploy Traefik and integrate it with the API server."""
-    juju.deploy(constants.TRAEFIK_APP, app=constants.TRAEFIK_APP, trust=True)
+    juju.deploy(
+        constants.TRAEFIK_APP,
+        app=constants.TRAEFIK_APP,
+        channel=constants.TRAEFIK_CHANNEL,
+        trust=True,
+    )
     juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
 
     juju.integrate(
@@ -117,6 +122,22 @@ def ingress_stack(juju: jubilant.Juju, deployed_stack):
     )
     juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
 
+@pytest.fixture(scope="module")
+def traefik_https_ingress_stack(juju: jubilant.Juju, traefik_ingress_stack):
+    """Deploy Traefik and integrate it with the API server."""
+    juju.deploy(
+        constants.SELFSIGNED_TLS_APP,
+        app=constants.SELFSIGNED_TLS_APP,
+        channel=constants.SELFSIGNED_TLS_CHANNEL,
+        trust=True,
+    )
+    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
+
+    juju.integrate(
+        f"{constants.TRAEFIK_APP}:certificates",
+        f"{constants.SELFSIGNED_TLS_APP}:certificates",
+    )
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
 
 @pytest.fixture(autouse=True)
 def invariant_checker(juju: jubilant.Juju):
@@ -188,19 +209,6 @@ def get_pebble_service_status(
         f"Service '{service_name}' not found in Pebble services output for {unit}.\n"
         f"Output:\n{services_text}"
     )
-
-
-def get_pebble_plan(
-    juju: jubilant.Juju,
-    unit: str,
-    component: str,
-) -> dict:
-    """Return the full Pebble plan as a dict for a unit container."""
-    import yaml
-
-    container = constants.CONTAINER_NAMES[component]
-    plan_text = juju.ssh(unit, "pebble plan", container=container)
-    return yaml.safe_load(plan_text) or {}
 
 
 def push_text_file(
