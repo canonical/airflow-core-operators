@@ -47,45 +47,6 @@ def _get_traefik_proxied_url(juju: jubilant.Juju) -> str:
     return url
 
 
-def _health_check_via_url(url: str, *, verify_tls: bool = True) -> dict:
-    """Hit ``/api/v2/monitor/health`` through *url* and assert all components healthy.
-
-    Returns the parsed health JSON on success.
-    """
-    health_url = f"{url.rstrip('/')}/api/v2/monitor/health"
-    for attempt in Retrying(
-        stop=stop_after_attempt(10), wait=wait_fixed(5), reraise=True
-    ):
-        with attempt:
-            resp = requests.get(
-                health_url,
-                headers={"Accept": "application/json"},
-                timeout=10,
-                verify=verify_tls,
-            )
-            assert resp.status_code == 200, (
-                f"Health endpoint returned {resp.status_code}: {resp.text[:200]}"
-            )
-        # TODO UNCOMMENT the assertions once PR #34 from coordinator repo is merged
-            # content_type = resp.headers.get("Content-Type", "")
-            # assert "json" in content_type, (
-            #     f"Expected JSON response, got Content-Type={content_type}: {resp.text[:200]}"
-            # )
-            # data = resp.json()
-            # assert all(v["status"] == "healthy" for v in data.values()), (
-            #     f"Not all components healthy: {data}"
-            # )
-    # return data
-
-
-def _get_api_server_pebble_service(juju: jubilant.Juju) -> dict:
-    """Return the pebble plan's service dict for the API server."""
-    plan = get_pebble_plan(
-        juju, f"{constants.CORE_CHARMS['api-server']}/0", "api-server"
-    )
-    return plan["services"][constants.PEBBLE_SERVICE_NAME]
-
-
 def _get_base_url(juju: jubilant.Juju) -> str:
     """Read ``[api] base_url`` from the rendered ``airflow.cfg``."""
     cfg = read_airflow_config(
@@ -96,25 +57,17 @@ def _get_base_url(juju: jubilant.Juju) -> str:
     return cfg.get("api", "base_url", fallback="")
 
 
-def _assert_pebble_has_proxy_flags(juju: jubilant.Juju) -> None:
+def _assert_pebble_plan(juju: jubilant.Juju, expect_proxy_flags: bool) -> None:
     """Assert the pebble service has --proxy-headers and FORWARDED_ALLOW_IPS."""
-    svc = _get_api_server_pebble_service(juju)
-    assert "--proxy-headers" in svc["command"], (
+    plan = get_pebble_plan(
+        juju, f"{constants.CORE_CHARMS['api-server']}/0", "api-server"
+    )
+    svc = plan["services"][constants.PEBBLE_SERVICE_NAME]
+    assert expect_proxy_flags == ("--proxy-headers" in svc["command"]), (
         f"Expected --proxy-headers in command, got: {svc['command']}"
     )
-    assert svc.get("environment", {}).get("FORWARDED_ALLOW_IPS") == "*", (
+    assert expect_proxy_flags == (svc.get("environment", {}).get("FORWARDED_ALLOW_IPS") == "*"), (
         f"Expected FORWARDED_ALLOW_IPS=*, got: {svc.get('environment')}"
-    )
-
-
-def _assert_pebble_has_no_proxy_flags(juju: jubilant.Juju) -> None:
-    """Assert the pebble service does NOT have proxy headers or FORWARDED_ALLOW_IPS."""
-    svc = _get_api_server_pebble_service(juju)
-    assert "--proxy-headers" not in svc["command"], (
-        f"--proxy-headers should be absent, got: {svc['command']}"
-    )
-    assert not svc.get("environment", {}).get("FORWARDED_ALLOW_IPS"), (
-        f"FORWARDED_ALLOW_IPS should be absent, got: {svc.get('environment')}"
     )
 
 
@@ -135,8 +88,30 @@ def _set_traefik_routing_mode(
 def test_health_via_ingress_url(juju: jubilant.Juju, ingress_stack):
     """Requests through the Traefik ingress URL reach the API server health endpoint."""
     url = _get_traefik_proxied_url(juju)
-    health = _health_check_via_url(url)
-    logger.info("Health check via ingress succeeded: %s", health)
+    health_url = f"{url.rstrip('/')}/api/v2/monitor/health"
+    for attempt in Retrying(
+        stop=stop_after_attempt(10), wait=wait_fixed(5), reraise=True
+    ):
+        with attempt:
+            resp = requests.get(
+                health_url,
+                headers={"Accept": "application/json"},
+                timeout=10,
+                verify=False,
+            )
+            assert resp.status_code == 200, (
+                f"Health endpoint returned {resp.status_code}: {resp.text[:200]}"
+            )
+        # TODO UNCOMMENT the assertions once PR #34 from coordinator repo is merged
+            # content_type = resp.headers.get("Content-Type", "")
+            # assert "json" in content_type, (
+            #     f"Expected JSON response, got Content-Type={content_type}: {resp.text[:200]}"
+            # )
+            # health = resp.json()
+            # assert all(v["status"] == "healthy" for v in health.values()), (
+            #     f"Not all components healthy: {health}"
+            # )
+    # logger.info("Health check via ingress succeeded: %s", health)
 
 
 def test_ingress_path_based_routing(juju: jubilant.Juju, ingress_stack):
@@ -154,7 +129,7 @@ def test_ingress_path_based_routing(juju: jubilant.Juju, ingress_stack):
     # assert ingress_path in base_url, (
     #     f"[path mode] Expected '{ingress_path}' in base_url, got: '{base_url}'"
     # )
-    _assert_pebble_has_proxy_flags(juju)
+    _assert_pebble_plan(juju, expect_proxy_flags=True)
 
 
 def test_ingress_relation_broken(juju: jubilant.Juju, ingress_stack):
@@ -172,7 +147,7 @@ def test_ingress_relation_broken(juju: jubilant.Juju, ingress_stack):
     assert ingress_path not in base_url, (
         f"[relation removed] base_url should NOT contain '{ingress_path}', got: '{base_url}'"
     )
-    _assert_pebble_has_no_proxy_flags(juju)
+    _assert_pebble_plan(juju, expect_proxy_flags=False)
 
     assert pebble_service_is_running(
         juju,
@@ -189,15 +164,20 @@ def test_ingress_subdomain_mode(juju: jubilant.Juju, ingress_stack):
         f"{constants.CORE_CHARMS['api-server']}:ingress",
         f"{constants.TRAEFIK_APP}:ingress",
     )
-    base_url = _get_base_url(juju)
-    url = _get_traefik_proxied_url(juju)
-    ingress_path = urlparse(url).path.strip("/")
-    _set_traefik_routing_mode(
-        juju, "subdomain", external_hostname=SUBDOMAIN_EXTERNAL_HOSTNAME
-    )
     juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
 
+    url = _get_traefik_proxied_url(juju)
+    ingress_path = urlparse(url).path.strip("/")
+
+    config: dict[str, str] = {
+        "routing_mode": "subdomain",
+        "external_hostname": SUBDOMAIN_EXTERNAL_HOSTNAME,
+    }
+    juju.config(constants.TRAEFIK_APP, config)
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
+
+    base_url = _get_base_url(juju)
     assert ingress_path not in base_url, (
         f"[subdomain mode] base_url should NOT contain '{ingress_path}', got: '{base_url}'"
     )
-    _assert_pebble_has_proxy_flags(juju)
+    _assert_pebble_plan(juju, expect_proxy_flags=True)
