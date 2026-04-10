@@ -37,3 +37,6 @@ requires:
   airflow-coordinator:
     interface: airflow_coordinator
     limit: 1
+  ingress:
+    interface: ingress
+    limit: 1

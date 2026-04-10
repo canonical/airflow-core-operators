@@ -78,6 +78,7 @@ def test_database_connectivity_from_scheduler(
     )
     assert "DB_CHECK_OK" in out, f"Failed to connect to the DB: {out}"
 
+
 def test_config_change_propagates_and_dags_reserialize(
     juju: jubilant.Juju,
 ):
@@ -193,7 +194,8 @@ def test_scheduler_scale_and_resilience(
                     # resolved, i.e. we can reliably ensure successful runs
                     if not any(
                         run.get("run_id") == run_id
-                        and run.get("state") in {"queued", "running", "failed", "success"}
+                        and run.get("state")
+                        in {"queued", "running", "failed", "success"}
                         for run in runs
                         if isinstance(runs, list)
                     ):

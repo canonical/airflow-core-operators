@@ -29,21 +29,27 @@ def test_pebble_services_and_config_exist(
 ):
     """Pebble services should be active and config should be present."""
 
-    for attempt in Retrying(stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True):
+    for attempt in Retrying(
+        stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True
+    ):
         with attempt:
             output = juju.ssh(
                 f"{app}/0",
                 f"test -f {shlex.quote(constants.AIRFLOW_CONFIG_PATH)} && echo OK || echo MISSING",
                 container=constants.CONTAINER_NAMES[component],
             )
-            assert "OK" in output, f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
+            assert "OK" in output, (
+                f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to exist"
+            )
 
             ownership = juju.ssh(
                 f"{app}/0",
                 f"stat -c '%U:%G' {shlex.quote(constants.AIRFLOW_CONFIG_PATH)}",
                 container=constants.CONTAINER_NAMES[component],
             ).strip()
-            assert ownership == f"{constants.WORKLOAD_USER}:{constants.WORKLOAD_GROUP}", (
+            assert (
+                ownership == f"{constants.WORKLOAD_USER}:{constants.WORKLOAD_GROUP}"
+            ), (
                 f"{app}: expected {constants.AIRFLOW_CONFIG_PATH} to be owned by "
                 f"{constants.WORKLOAD_USER}:{constants.WORKLOAD_GROUP}, got {ownership}"
             )

@@ -1,6 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import json
 import logging
 
 import ops.testing
@@ -77,6 +78,20 @@ def triggerer_relation(triggerer_data):
 @pytest.fixture(scope="function")
 def dag_processor_relation(dag_processor_data):
     return ops.testing.Relation("airflow-coordinator", remote_app_data=dag_processor_data)
+
+
+@pytest.fixture(scope="function")
+def ingress_relation():
+    """Create a basic ingress relation (no URL published yet)."""
+    return ops.testing.Relation("ingress", remote_app_data={})
+
+
+def ingress_relation_with_url(url: str) -> ops.testing.Relation:
+    """Create an ingress relation with a provider-published URL."""
+    return ops.testing.Relation(
+        "ingress",
+        remote_app_data={"ingress": json.dumps({"url": url})},
+    )
 
 
 @pytest.fixture(scope="function")
