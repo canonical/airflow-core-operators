@@ -126,16 +126,16 @@ def traefik_ingress_stack(juju: jubilant.Juju, deployed_stack):
 def traefik_https_ingress_stack(juju: jubilant.Juju, traefik_ingress_stack):
     """Deploy Traefik and integrate it with the API server."""
     juju.deploy(
-        constants.SELFSIGNED_TLS_APP,
-        app=constants.SELFSIGNED_TLS_APP,
-        channel=constants.SELFSIGNED_TLS_CHANNEL,
+        constants.SELF_SIGNED_CERT_APP,
+        app=constants.SELF_SIGNED_CERT_APP,
+        channel=constants.SELF_SIGNED_CERT_CHANNEL,
         trust=True,
     )
     juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
 
     juju.integrate(
         f"{constants.TRAEFIK_APP}:certificates",
-        f"{constants.SELFSIGNED_TLS_APP}:certificates",
+        f"{constants.SELF_SIGNED_CERT_APP}:certificates",
     )
     juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
 
