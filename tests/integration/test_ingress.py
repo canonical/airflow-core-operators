@@ -18,7 +18,6 @@ as an ingress-per-app reverse proxy.  Focus areas:
 
 import json
 import logging
-from urllib.parse import urlparse
 
 import jubilant
 import requests
@@ -39,9 +38,9 @@ def _get_traefik_proxied_url(juju: jubilant.Juju) -> str:
     )
     return url
 
-def test_http_health_check_via_ingress(juju: jubilant.Juju, traefik_ingress_stack):
-    """Requests through the Traefik ingress URL reach the API server health endpoint."""
-    url = _get_traefik_proxied_url(juju)
+
+def _health_check_via_url(url: str):
+    """Perform a health check request to the given URL and validate the response."""
     health_url = f"{url.rstrip('/')}/api/v2/monitor/health"
     for attempt in Retrying(
         stop=stop_after_attempt(10), wait=wait_fixed(5), reraise=True
@@ -67,31 +66,17 @@ def test_http_health_check_via_ingress(juju: jubilant.Juju, traefik_ingress_stac
         # )
     # logger.info("Health check via ingress succeeded: %s", health)
 
-def test_https_health_check_via_tls_ingress(juju: jubilant.Juju, traefik_https_ingress_stack):
+
+def test_http_health_check_via_ingress(juju: jubilant.Juju, traefik_ingress_stack):
+    """Requests through the Traefik ingress URL reach the API server health endpoint."""
+    url = _get_traefik_proxied_url(juju)
+    _health_check_via_url(url)
+
+
+def test_https_health_check_via_tls_ingress(
+    juju: jubilant.Juju, traefik_https_ingress_stack
+):
     """Requests through the Traefik ingress URL reach the API server health endpoint."""
     url = _get_traefik_proxied_url(juju)
     assert url.startswith("https://"), f"Expected HTTPS URL, got: {url}"
-    health_url = f"{url.rstrip('/')}/api/v2/monitor/health"
-    for attempt in Retrying(
-        stop=stop_after_attempt(10), wait=wait_fixed(5), reraise=True
-    ):
-        with attempt:
-            resp = requests.get(
-                health_url,
-                headers={"Accept": "application/json"},
-                timeout=10,
-                verify=False,
-            )
-            assert resp.status_code == 200, (
-                f"Health endpoint returned {resp.status_code}: {resp.text[:200]}"
-            )
-        # TODO UNCOMMENT the assertions once PR #34 from coordinator repo is merged
-        # content_type = resp.headers.get("Content-Type", "")
-        # assert "json" in content_type, (
-        #     f"Expected JSON response, got Content-Type={content_type}: {resp.text[:200]}"
-        # )
-        # health = resp.json()
-        # assert all(v["status"] == "healthy" for v in health.values()), (
-        #     f"Not all components healthy: {health}"
-        # )
-    # logger.info("Health check via ingress succeeded: %s", health)
+    _health_check_via_url(url)

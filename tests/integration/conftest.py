@@ -122,6 +122,7 @@ def traefik_ingress_stack(juju: jubilant.Juju, deployed_stack):
     )
     juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
 
+
 @pytest.fixture(scope="module")
 def traefik_https_ingress_stack(juju: jubilant.Juju, traefik_ingress_stack):
     """Deploy Traefik and integrate it with the API server."""
@@ -138,6 +139,7 @@ def traefik_https_ingress_stack(juju: jubilant.Juju, traefik_ingress_stack):
         f"{constants.SELF_SIGNED_CERT_APP}:certificates",
     )
     juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
+
 
 @pytest.fixture(autouse=True)
 def invariant_checker(juju: jubilant.Juju):
