@@ -17,15 +17,12 @@ as an ingress-per-app reverse proxy.  Focus areas:
 """
 
 import json
-import logging
 
 import jubilant
 import requests
 from tenacity import Retrying, stop_after_attempt, wait_fixed
 
 import tests.integration.helpers.constants as constants
-
-logger = logging.getLogger(__name__)
 
 
 def _get_traefik_proxied_url(juju: jubilant.Juju) -> str:
@@ -55,16 +52,15 @@ def _health_check_via_url(url: str):
             assert resp.status_code == 200, (
                 f"Health endpoint returned {resp.status_code}: {resp.text[:200]}"
             )
-        # TODO UNCOMMENT the assertions once PR #34 from coordinator repo is merged
-        # content_type = resp.headers.get("Content-Type", "")
-        # assert "json" in content_type, (
-        #     f"Expected JSON response, got Content-Type={content_type}: {resp.text[:200]}"
-        # )
-        # health = resp.json()
-        # assert all(v["status"] == "healthy" for v in health.values()), (
-        #     f"Not all components healthy: {health}"
-        # )
-    # logger.info("Health check via ingress succeeded: %s", health)
+
+        content_type = resp.headers.get("Content-Type", "")
+        assert "json" in content_type, (
+            f"Expected JSON response, got Content-Type={content_type}: {resp.text[:200]}"
+        )
+        health = resp.json()
+        assert all(v["status"] == "healthy" for v in health.values()), (
+            f"Not all components healthy: {health}"
+        )
 
 
 def test_http_health_check_via_ingress(juju: jubilant.Juju, traefik_ingress_stack):
