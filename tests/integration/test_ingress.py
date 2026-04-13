@@ -9,11 +9,8 @@
 These tests validate the Airflow stack's behavior when integrated with Traefik
 as an ingress-per-app reverse proxy.  Focus areas:
 
-- Health checks through the ingress URL reach the API server.
-- ``base_url`` in ``airflow.cfg`` contains the ingress path with ``routing_mode=path``
-  and does **not** contain it with ``routing_mode=subdomain`` or after relation removal.
-- The Pebble plan is updated with ``--proxy-headers`` and ``FORWARDED_ALLOW_IPS``
-  while ingress is related, and reverts when it is removed.
+- Standard HTTP routing and health checks through the Traefik ingress URL.
+- HTTPS routing and TLS termination when Traefik is integrated with a certificates operator.
 """
 
 import json
