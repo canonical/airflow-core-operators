@@ -105,6 +105,42 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
 
 
+@pytest.fixture(scope="module")
+def traefik_ingress_stack(juju: jubilant.Juju, deployed_stack):
+    """Deploy Traefik and integrate it with the API server."""
+    juju.deploy(
+        constants.TRAEFIK_APP,
+        app=constants.TRAEFIK_APP,
+        channel=constants.TRAEFIK_CHANNEL,
+        trust=True,
+    )
+    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
+
+    juju.integrate(
+        f"{constants.CORE_CHARMS['api-server']}:ingress",
+        f"{constants.TRAEFIK_APP}:ingress",
+    )
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
+
+
+@pytest.fixture(scope="module")
+def traefik_https_ingress_stack(juju: jubilant.Juju, traefik_ingress_stack):
+    """Deploy Traefik and integrate it with the API server."""
+    juju.deploy(
+        constants.SELF_SIGNED_CERT_APP,
+        app=constants.SELF_SIGNED_CERT_APP,
+        channel=constants.SELF_SIGNED_CERT_CHANNEL,
+        trust=True,
+    )
+    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
+
+    juju.integrate(
+        f"{constants.TRAEFIK_APP}:certificates",
+        f"{constants.SELF_SIGNED_CERT_APP}:certificates",
+    )
+    juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=2, delay=10)
+
+
 @pytest.fixture(autouse=True)
 def invariant_checker(juju: jubilant.Juju):
     """Fail fast when core app invariants are broken before or after tests."""

@@ -57,11 +57,16 @@ AIRFLOW_HOME = "/opt/airflow"
 POSTGRES_APP = "postgresql-k8s"
 PGBOUNCER_APP = "pgbouncer-k8s"
 COORDINATOR_APP = "airflow-coordinator-k8s"
+TRAEFIK_APP = "traefik-k8s"
+SELF_SIGNED_CERT_APP = "self-signed-certificates"
+
 
 ALL_APPS = [POSTGRES_APP, PGBOUNCER_APP, COORDINATOR_APP] + list(CORE_APPS)
 
 POSTGRES_CHANNEL = "14/stable"
 COORDINATOR_CHANNEL = "3.1/edge"
+TRAEFIK_CHANNEL = "latest/stable"
+SELF_SIGNED_CERT_CHANNEL = "1/stable"
 
 COORD_REL = "airflow-coordinator"
 
