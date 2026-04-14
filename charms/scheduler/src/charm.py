@@ -125,7 +125,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
         # Check if we can write the config
         # If not, the coordinator hasn't provided config yet (temporary condition)
         if not self._config_requires.can_write_airflow_config:
-            raise ExitWithStatusError("Waiting for relation data", ops.WaitingStatus)
+            raise ExitWithStatusError("Waiting for relation data from coordinator", ops.WaitingStatus)
 
         try:
             self._config_requires.write_airflow_config(
