@@ -20,7 +20,7 @@ clean-core-charms:
 integration *args: clean pack-charms
 	#!/usr/bin/bash
 	pdb_options=$(if [ -n "${debug}" ]; then echo "--pdb"; fi)
-	
+
 	export API_SERVER_CHARM_PATH=$(ls -t charms/api-server/*.charm | head -n1)
 	export DAG_PROCESSOR_CHARM_PATH=$(ls -t charms/dag-processor/*.charm | head -n1)
 	export SCHEDULER_CHARM_PATH=$(ls -t charms/scheduler/*.charm | head -n1)
@@ -37,12 +37,43 @@ clean: clean-core-charms
 	juju destroy-model --force --destroy-storage --no-prompt "${JUJU_MODEL:-test}" || true
 
 lint:
+	#!/usr/bin/bash
+	set -eux
+
 	uv sync --frozen --group lint
 	uv run tox -e lint
 
+	charms=("api-server" "dag-processor" "scheduler" "triggerer")
+
+	for charm in "${charms[@]}"; do
+		uv sync --frozen --group lint
+		cd ./charms/$charm && uv run tox -e lint && cd -
+	done
+
 format:
+	#!/usr/bin/bash
+	set -eux
+
 	uv sync --frozen --group format
 	uv run tox -e format
+
+	charms=("api-server" "dag-processor" "scheduler" "triggerer")
+
+	for charm in "${charms[@]}"; do
+		uv sync --frozen --group format
+		cd ./charms/$charm && uv run tox -e format && cd -
+	done
+
+# Run unit tests for all core charms
+unit:
+	#!/usr/bin/bash
+	set -eux
+
+	charms=("api-server" "dag-processor" "scheduler" "triggerer")
+
+	for charm in "${charms[@]}"; do
+		cd ./charms/$charm && uv run tox -e unit && cd -
+	done
 
 get-system-state:
 	#!/usr/bin/bash

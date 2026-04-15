@@ -276,9 +276,7 @@ def test_pod_spec_no_op_when_not_available_scenario(context, state, container, s
         unittest.mock.patch.object(
             AirflowCoordinatorCoreRequires, "write_kubernetes_executor_pod_spec"
         ) as write_pod_spec_mock,
-        unittest.mock.patch(
-            "ops.model.Container.exists", autospec=True, return_value=False
-        ),
+        unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=False),
         unittest.mock.patch("ops.model.Container.replan", autospec=True),
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
@@ -316,12 +314,8 @@ def test_pod_spec_removed_when_not_in_databag_scenario(
         unittest.mock.patch.object(
             AirflowCoordinatorCoreRequires, "write_kubernetes_executor_pod_spec"
         ) as write_pod_spec_mock,
-        unittest.mock.patch(
-            "ops.model.Container.exists", autospec=True, return_value=True
-        ),
-        unittest.mock.patch(
-            "ops.model.Container.remove_path", autospec=True
-        ) as remove_mock,
+        unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=True),
+        unittest.mock.patch("ops.model.Container.remove_path", autospec=True) as remove_mock,
         unittest.mock.patch("ops.model.Container.replan", autospec=True),
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
