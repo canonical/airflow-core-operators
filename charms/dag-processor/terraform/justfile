@@ -13,7 +13,13 @@ initialize:
 
 [private]
 destroy-model:
-    juju destroy-model --no-prompt --destroy-storage terraform || true
+    #!/usr/bin/bash
+    if [ "${CI:-}" = "true" ]; then
+        juju destroy-model --no-prompt --destroy-storage --no-wait terraform || true
+        sleep 60
+    else
+        juju destroy-model --no-prompt --destroy-storage terraform || true
+    fi
 
 [private]
 add-model: (destroy-model)
