@@ -12,6 +12,7 @@ import os
 import sys
 import time
 
+import cryptography.fernet
 import jubilant
 import pytest
 
@@ -101,6 +102,26 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
             f"{constants.COORDINATOR_APP}:{constants.COORD_REL}",
             f"{app}:{constants.COORD_REL}",
         )
+
+    # Create a fernet key and secret with it
+    fernet_key = cryptography.fernet.Fernet.generate_key().decode()
+
+    fernet_key_secret_uri = juju.add_secret(
+        name="fernet-key-secret",
+        content={
+            constants.FERNET_KEY: fernet_key,
+        },
+    )
+
+    # Grant secret and configure
+    juju.grant_secret(fernet_key_secret_uri, constants.COORDINATOR_APP)
+
+    juju.config(
+        constants.COORDINATOR_APP,
+        {
+            constants.FERNET_KEY_SECRET_CONFIG: fernet_key_secret_uri,
+        },
+    )
 
     juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
 
