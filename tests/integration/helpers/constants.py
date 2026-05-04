@@ -87,3 +87,6 @@ DAGS_FILE = f"{DEFAULT_DAGS_PATH}/test_dag.py"
 PEBBLE_SERVICE_NAME = "airflow"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+FERNET_KEY_SECRET_CONFIG = "fernet_key_secret"
+FERNET_KEY = "fernet-key"
