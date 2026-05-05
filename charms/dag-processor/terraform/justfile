@@ -1,5 +1,7 @@
 set export := true # Just variables are exported into environment variables
 
+mode := ""
+
 [private]
 default:
     just --list
@@ -14,7 +16,7 @@ initialize:
 [private]
 destroy-model:
     #!/usr/bin/bash
-    if [ "${CI:-}" = "true" ]; then
+    if [ "{{ mode }}" = "ci" ]; then
         juju destroy-model --no-prompt --destroy-storage --no-wait terraform || true
         sleep 60
     else
