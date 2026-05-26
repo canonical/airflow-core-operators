@@ -18,6 +18,7 @@ body:
         - scheduler
         - triggerer
         - dag-processor
+        - all-core-charms
     validations:
       required: true
   - type: textarea
