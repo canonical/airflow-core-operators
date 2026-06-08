@@ -206,7 +206,7 @@ class TestWebserverConfigHandling:
                 AirflowCoordinatorCoreRequires,
                 can_write_airflow_config=unittest.mock.PropertyMock(return_value=True),
                 airflow_config_needs_update=unittest.mock.MagicMock(return_value=False),
-                write_airflow_config=unittest.mock.MagicMock(return_vlaue=True),
+                write_airflow_config=unittest.mock.MagicMock(return_value=True),
                 can_write_webserver_config=unittest.mock.PropertyMock(return_value=True),
                 webserver_config_needs_update=unittest.mock.MagicMock(return_value=True),
                 write_webserver_config=unittest.mock.MagicMock(
@@ -236,7 +236,7 @@ class TestWebserverConfigHandling:
                 AirflowCoordinatorCoreRequires,
                 can_write_airflow_config=unittest.mock.PropertyMock(return_value=True),
                 airflow_config_needs_update=unittest.mock.MagicMock(return_value=False),
-                write_airflow_config=unittest.mock.MagicMock(return_vlaue=True),
+                write_airflow_config=unittest.mock.MagicMock(return_value=True),
                 can_write_webserver_config=unittest.mock.PropertyMock(return_value=False),
             ),
             unittest.mock.patch.object(
@@ -269,7 +269,7 @@ class TestWebserverConfigHandling:
                 AirflowCoordinatorCoreRequires,
                 can_write_airflow_config=unittest.mock.PropertyMock(return_value=True),
                 airflow_config_needs_update=unittest.mock.MagicMock(return_value=False),
-                write_airflow_config=unittest.mock.MagicMock(return_vlaue=True),
+                write_airflow_config=unittest.mock.MagicMock(return_value=True),
                 can_write_webserver_config=unittest.mock.PropertyMock(return_value=False),
             ),
             unittest.mock.patch.multiple(
