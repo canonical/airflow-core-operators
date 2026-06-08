@@ -206,6 +206,74 @@ class AirflowApiServerCharm(ops.CharmBase):
                 ops.BlockedStatus,
             )
 
+    def _handle_webserver_config(self) -> bool:
+        """Write or remove webserver_config.py based on coordinator relation data.
+
+        Delegates to AirflowCoordinatorCoreRequires when the coordinator has shared
+        a webserver config template; falls back to removing any stale file when OAuth
+        is no longer active.
+
+        Returns:
+            True if the file was created, updated, or removed (service restart
+            warranted), False otherwise.
+
+        Raises:
+            ExitWithStatusError: If a Pebble operation fails.
+        """
+        if self._config_requires.can_write_webserver_config:
+            try:
+                needs_update = self._config_requires.webserver_config_needs_update(
+                    constants.WEBSERVER_CONFIG_PATH
+                )
+            except (ops.pebble.ConnectionError, ops.pebble.PathError) as e:
+                logger.exception("Failed to check webserver_config.py: %s", e)
+                raise ExitWithStatusError(
+                    constants.FAILED_TO_CHECK_WEBSERVER_CONFIG_UPDATE_MESSAGE,
+                    ops.BlockedStatus,
+                )
+
+            if not needs_update:
+                return False
+
+            try:
+                self._config_requires.write_webserver_config(
+                    filepath=constants.WEBSERVER_CONFIG_PATH,
+                    user=constants.WORKLOAD_USER,
+                    group=constants.WORKLOAD_GROUP,
+                )
+            except (ops.pebble.ConnectionError, ops.pebble.Error) as e:
+                logger.exception("Failed to write webserver_config.py: %s", e)
+                raise ExitWithStatusError(
+                    constants.FAILED_TO_WRITE_WEBSERVER_CONFIG_MESSAGE,
+                    ops.BlockedStatus,
+                )
+
+            return True
+
+        # OAuth not active — remove any stale file from a previous OAuth relation.
+        try:
+            file_exists = self._container.exists(constants.WEBSERVER_CONFIG_PATH)
+        except ops.pebble.ConnectionError as e:
+            logger.exception("Pebble connection error checking webserver_config.py: %s", e)
+            raise ExitWithStatusError(
+                constants.FAILED_TO_CHECK_WEBSERVER_CONFIG_EXISTS_MESSAGE,
+                ops.BlockedStatus,
+            )
+
+        if not file_exists:
+            return False
+
+        try:
+            self._container.remove_path(constants.WEBSERVER_CONFIG_PATH)
+        except (ops.pebble.ConnectionError, ops.pebble.PathError) as e:
+            logger.exception("Failed to remove webserver_config.py: %s", e)
+            raise ExitWithStatusError(
+                constants.FAILED_TO_REMOVE_WEBSERVER_CONFIG_MESSAGE,
+                ops.BlockedStatus,
+            )
+
+        return True
+
     def _reconcile(self, _) -> None:
         """Reconcile the charm state."""
         try:
@@ -225,12 +293,16 @@ class AirflowApiServerCharm(ops.CharmBase):
             if airflow_config_updated:
                 self._write_airflow_config(config_path=constants.AIRFLOW_CONFIG_PATH)
 
+            webserver_config_updated = self._handle_webserver_config()
+
             if self._config_requires.can_write_tls_ca_chain:
                 self._config_requires.write_tls_ca_chains(
                     constants.WORKLOAD_USER, constants.WORKLOAD_GROUP
                 )
 
-            self._add_layer_and_replan(restart_service=airflow_config_updated)
+            self._add_layer_and_replan(
+                restart_service=airflow_config_updated or webserver_config_updated
+            )
         except ExitWithStatusError as e:
             self.unit.status = e.status
             return
