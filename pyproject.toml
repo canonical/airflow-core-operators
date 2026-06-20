@@ -17,7 +17,7 @@ integration = [
   "requests",
   "PyYAML",
   "tenacity",
-  "cryptography>=41.0",
+  "cryptography>=48.0.1",
 ]
 
 lint = [
