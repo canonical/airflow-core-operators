@@ -13,7 +13,8 @@ jobs:
       base-ref: ${{ github.event.before }}
       marker: charmcraft.yaml
       search-root: charms
-    secrets: inherit
+    permissions:
+      pull-requests: read
 
   run-tests:
     name: Unit + integration tests
