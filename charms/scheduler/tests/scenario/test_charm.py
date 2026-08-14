@@ -445,3 +445,67 @@ def test_stop_service_pebble_api_error_scenario(context, state, container):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
     assert state_out.unit_status == ops.BlockedStatus("Failed to stop service: Pebble API error")
+
+
+def test_spark_env_injected_into_pebble_layer(context, state, container, scheduler_relation):
+    """SPARK_NAMESPACE and SPARK_USERNAME from extra_data appear in the pebble service layer."""
+    state_in = dataclasses.replace(state, relations=[scheduler_relation])
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=False,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_tls_ca_chain",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=False,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_kubernetes_executor_pod_spec",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=False,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "provider_content",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=unittest.mock.MagicMock(
+                extra_data={"spark_namespace": "airflow-spark", "spark_username": "spark"},
+            ),
+        ),
+    ):
+        with context(context.on.pebble_ready(container), state_in) as manager:
+            charm = manager.charm
+            layer = charm._airflow_scheduler_layer
+
+    assert layer["services"][constants.SERVICE_NAME]["environment"] == {
+        "SPARK_NAMESPACE": "airflow-spark",
+        "SPARK_USERNAME": "spark",
+    }
+
+
+def test_no_spark_env_without_extra_data(context, state, container, scheduler_relation):
+    """When extra_data is None, no environment key appears in the pebble layer."""
+    state_in = dataclasses.replace(state, relations=[scheduler_relation])
+    with (
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "provider_content",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=unittest.mock.MagicMock(extra_data=None),
+        ),
+    ):
+        with context(context.on.pebble_ready(container), state_in) as manager:
+            charm = manager.charm
+            layer = charm._airflow_scheduler_layer
+
+    assert "environment" not in layer["services"][constants.SERVICE_NAME]

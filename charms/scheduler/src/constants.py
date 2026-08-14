@@ -9,3 +9,7 @@ SERVICE_NAME = "airflow"
 WORKLOAD_USER = "ubuntu"
 WORKLOAD_GROUP = "ubuntu"
 AIRFLOW_POD_TEMPLATE_FILE_PATH = f"{AIRFLOW_HOME}/pod_templates/worker_pod_template.yaml"
+
+# Keys in extra_data from the coordinator's spark-service-account relation.
+SPARK_NAMESPACE_KEY = "spark_namespace"
+SPARK_USERNAME_KEY = "spark_username"

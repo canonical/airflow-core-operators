@@ -52,18 +52,34 @@ class AirflowSchedulerCharm(ops.CharmBase):
         )
 
     @property
+    def _spark_env(self) -> dict[str, str]:
+        """Spark env vars from the coordinator's extra_data (spark-service-account relation)."""
+        provider_content = self._config_requires.provider_content
+        extra_data = (provider_content.extra_data or {}) if provider_content else {}
+        env = {}
+        if extra_data.get(constants.SPARK_NAMESPACE_KEY):
+            env["SPARK_NAMESPACE"] = extra_data[constants.SPARK_NAMESPACE_KEY]
+        if extra_data.get(constants.SPARK_USERNAME_KEY):
+            env["SPARK_USERNAME"] = extra_data[constants.SPARK_USERNAME_KEY]
+        return env
+
+    @property
     def _airflow_scheduler_layer(self) -> LayerDict:
         """Return the service Pebble layer."""
+        service_config: dict = {
+            "override": "replace",
+            "summary": "The airflow scheduler service.",
+            "command": "airflow scheduler",
+            "startup": "enabled",
+            "user": constants.WORKLOAD_USER,
+            "group": constants.WORKLOAD_GROUP,
+        }
+        spark_env = self._spark_env
+        if spark_env:
+            service_config["environment"] = spark_env
         layer: LayerDict = {
             "services": {
-                constants.SERVICE_NAME: {
-                    "override": "replace",
-                    "summary": "The airflow scheduler service.",
-                    "command": "airflow scheduler",
-                    "startup": "enabled",
-                    "user": constants.WORKLOAD_USER,
-                    "group": constants.WORKLOAD_GROUP,
-                }
+                constants.SERVICE_NAME: service_config,
             }
         }
         return layer
