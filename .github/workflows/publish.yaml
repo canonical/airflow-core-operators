@@ -79,6 +79,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.collect-build-matrix.outputs.matrix) }}
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -109,6 +111,8 @@ jobs:
       fail-fast: false
       matrix:
         charm_path: ${{ fromJSON(needs.get-modified-charms.outputs.paths) }}
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
