@@ -21,6 +21,9 @@ jobs:
     name: Unit + integration tests
     needs: get-modified-charms
     if: ${{ needs.get-modified-charms.outputs.paths != '[]' }}
+    permissions:
+      contents: write
+      pull-requests: write
     uses: ./.github/workflows/tests.yaml
     with:
       directories: ${{ needs.get-modified-charms.outputs.paths }}
