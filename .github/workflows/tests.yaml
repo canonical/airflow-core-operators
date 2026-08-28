@@ -20,6 +20,8 @@ jobs:
       fail-fast: false
       matrix:
         charm-path: ${{ fromJSON(inputs.directories || '["charms/api-server","charms/scheduler","charms/dag-processor","charms/triggerer"]') }}
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
