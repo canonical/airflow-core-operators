@@ -107,22 +107,32 @@ class AirflowApiServerCharm(ops.CharmBase):
             )
 
     def _handle_ingress(self) -> None:
-        """Extract the ingress path and share it to configure Airflow's base_url.
+        """Share the external ingress URL to configure Airflow's base_url.
 
-        The extracted path is passed to the airflow-coordinator, which uses it
-        to construct the global `base_url` configuration for the Airflow cluster.
+        The URL is passed to the airflow-coordinator, which uses it to construct
+        the global `base_url` configuration for the Airflow cluster and the OAuth
+        redirect URI. The full URL is published rather than only its path, because
+        the scheme and authority assigned by Traefik cannot be recovered from the
+        API server's internal host and port.
 
-        - Clears the path if the relation is broken or unready.
-        - Extracts the path prefix (for routing_mode=path) from the
-           URL and sets it in the relation databag.
-        - Clears the path if the extracted path is empty (for routing_mode=subdomain).
+        The path prefix is published alongside it for coordinators running an
+        older revision of the library, which build `base_url` from the internal
+        host, port and path.
+
+        - Clears both values if the relation is broken or unready.
+        - Clears the path if the extracted path is empty (for routing_mode=subdomain),
+          where the URL alone carries the routing information.
         """
         if (
             not self.model.get_relation(constants.TRAEFIK_INGRESS_RELATION_ENDPOINT)
             or not self._ingress.url
         ):
             self._api_server_provides.clear_ingress_path()
+            self._api_server_provides.clear_ingress_url()
             return
+
+        self._api_server_provides.set_ingress_url(self._ingress.url)
+
         ingress_path = urlparse(self._ingress.url).path.strip("/") or None
         if ingress_path:
             self._api_server_provides.set_ingress_path(ingress_path)
