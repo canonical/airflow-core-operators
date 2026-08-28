@@ -79,10 +79,14 @@ def test_ingress_ready_path_routing(context, state, container, api_server_relati
 
     assert state_out.unit_status == ops.ActiveStatus()
 
-    # Verify ingress path is shared via the airflow-api-server relation
+    # Verify ingress path and full external URL are shared via the airflow-api-server relation
     api_server_provides_out = state_out.get_relations("airflow-api-server")[0]
     assert (
         api_server_provides_out.local_app_data.get("ingress_path") == "test-airflow-api-server-k8s"
+    )
+    assert (
+        api_server_provides_out.local_app_data.get("ingress_url")
+        == "http://traefik:8080/test-airflow-api-server-k8s"
     )
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
@@ -92,7 +96,7 @@ def test_ingress_ready_path_routing(context, state, container, api_server_relati
 
 
 def test_ingress_ready_subdomain_routing(context, state, container, api_server_relation):
-    """With subdomain-based routing, no path is shared."""
+    """With subdomain-based routing, no path is shared but the URL still is."""
     ingress_rel = ingress_relation_with_url("http://test-airflow-api-server-k8s.example.com/")
     api_server_provides_rel = ops.testing.Relation(
         "airflow-api-server",
@@ -113,6 +117,11 @@ def test_ingress_ready_subdomain_routing(context, state, container, api_server_r
 
     api_server_provides_out = state_out.get_relations("airflow-api-server")[0]
     assert "ingress_path" not in api_server_provides_out.local_app_data
+    # The URL carries the routing information when there is no path prefix.
+    assert (
+        api_server_provides_out.local_app_data.get("ingress_url")
+        == "http://test-airflow-api-server-k8s.example.com"
+    )
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     layer = out_container.layers["api-server-base"]
@@ -125,7 +134,10 @@ def test_ingress_revoked_on_relation_broken(context, state, container, api_serve
     ingress_rel = ingress_relation_with_url("http://traefik:8080/test-airflow-api-server-k8s")
     api_server_provides_rel = ops.testing.Relation(
         "airflow-api-server",
-        local_app_data={"ingress_path": "test-airflow-api-server-k8s"},
+        local_app_data={
+            "ingress_path": "test-airflow-api-server-k8s",
+            "ingress_url": "http://traefik:8080/test-airflow-api-server-k8s",
+        },
         remote_app_data={},
     )
     state_in = dataclasses.replace(
@@ -143,6 +155,7 @@ def test_ingress_revoked_on_relation_broken(context, state, container, api_serve
 
     api_server_provides_out = state_out.get_relations("airflow-api-server")[0]
     assert "ingress_path" not in api_server_provides_out.local_app_data
+    assert "ingress_url" not in api_server_provides_out.local_app_data
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     layer = out_container.layers["api-server-base"]
@@ -151,7 +164,7 @@ def test_ingress_revoked_on_relation_broken(context, state, container, api_serve
 
 
 def test_non_leader_does_not_set_ingress_path(context, state, container, api_server_relation):
-    """Non-leader units do not write ingress_path to the relation databag."""
+    """Non-leader units do not write ingress_path or ingress_url to the relation databag."""
     ingress_rel = ingress_relation_with_url("http://traefik:8080/test-airflow-api-server-k8s")
     api_server_provides_rel = ops.testing.Relation(
         "airflow-api-server",
@@ -170,6 +183,7 @@ def test_non_leader_does_not_set_ingress_path(context, state, container, api_ser
 
     api_server_provides_out = state_out.get_relations("airflow-api-server")[0]
     assert "ingress_path" not in api_server_provides_out.local_app_data
+    assert "ingress_url" not in api_server_provides_out.local_app_data
 
 
 def test_restart_when_ingress_layer_changes(context, state, container, api_server_relation):
