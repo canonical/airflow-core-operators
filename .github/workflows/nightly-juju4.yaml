@@ -39,3 +39,25 @@ jobs:
       juju-channel: ${{ needs.load-env.outputs.juju-channel }}
       postgres-channel: ${{ needs.load-env.outputs.postgres-channel }}
       postgres-force: ${{ needs.load-env.outputs.postgres-force == 'true' }}
+
+  report-failure:
+    needs: tests
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update nightly Juju 4 failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          existing=$(gh issue list -R "$GITHUB_REPOSITORY" --label juju-4 --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" -R "$GITHUB_REPOSITORY" --body "Nightly Juju 4 run failed again: $RUN_URL"
+          else
+            gh issue create -R "$GITHUB_REPOSITORY" --label juju-4 \
+              --title "Nightly Juju 4 integration tests failing" \
+              --body "Run: $RUN_URL"
+          fi
