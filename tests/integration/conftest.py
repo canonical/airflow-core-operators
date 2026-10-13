@@ -66,6 +66,7 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     juju.deploy(
         constants.POSTGRES_APP,
         channel=constants.POSTGRES_CHANNEL,
+        force=constants.POSTGRES_FORCE_DEPLOY,
         trust=True,
         config={"profile": "testing"},
     )

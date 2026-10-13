@@ -8,6 +8,21 @@ on:
         required: false
         type: string
         default: '["charms/api-server","charms/scheduler","charms/dag-processor","charms/triggerer"]'
+      juju-channel:
+        description: Juju snap channel for concierge. Empty uses the concierge default.
+        required: false
+        type: string
+        default: ''
+      postgres-channel:
+        description: postgresql-k8s channel. Empty uses the tests default.
+        required: false
+        type: string
+        default: ''
+      postgres-force:
+        description: Deploy postgresql-k8s with --force (needed for Juju 4 until it is supported).
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -101,6 +116,9 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.discover-integration-tasks.outputs.matrix) }}
     if: ${{ needs.discover-integration-tasks.outputs.matrix != '{"include":[]}' }}
+    env:
+      POSTGRES_CHANNEL: ${{ inputs.postgres-channel }}
+      POSTGRES_FORCE_DEPLOY: ${{ inputs.postgres-force && '1' || '' }}
     steps:
       - name: Maximise GH runner space
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -119,7 +137,8 @@ jobs:
 
           sudo snap install concierge --classic
 
-          sudo -E concierge prepare -p k8s --extra-snaps=astral-uv,just
+          sudo -E concierge prepare -p k8s --extra-snaps=astral-uv,just \
+            ${{ inputs.juju-channel && format('--channel={0}', inputs.juju-channel) || '' }}
 
           mkdir -p ~/.kube
           sudo k8s kubectl config view --raw > ~/.kube/config
