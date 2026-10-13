@@ -1,0 +1,41 @@
+name: nightly-juju4
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  load-env:
+    runs-on: ubuntu-latest
+    outputs:
+      juju-channel: ${{ steps.vars.outputs.juju-channel }}
+      postgres-channel: ${{ steps.vars.outputs.postgres-channel }}
+      postgres-force: ${{ steps.vars.outputs.postgres-force }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Read nightly-juju4.env
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source .github/workflows/nightly-juju4.env
+          set +a
+          echo "juju-channel=$JUJU_CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "postgres-channel=$POSTGRES_CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "postgres-force=$POSTGRES_FORCE" >> "$GITHUB_OUTPUT"
+
+  tests:
+    needs: load-env
+    uses: ./.github/workflows/tests.yaml
+    secrets: inherit
+    with:
+      juju-channel: ${{ needs.load-env.outputs.juju-channel }}
+      postgres-channel: ${{ needs.load-env.outputs.postgres-channel }}
+      postgres-force: ${{ needs.load-env.outputs.postgres-force == 'true' }}
