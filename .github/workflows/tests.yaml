@@ -137,8 +137,13 @@ jobs:
 
           sudo snap install concierge --classic
 
+          # Clear any stale controller left over from a previous run on this runner
+          if command -v juju >/dev/null 2>&1 && juju controllers --format json 2>/dev/null | grep -q concierge-k8s; then
+            sudo -u ubuntu juju kill-controller concierge-k8s --no-prompt || true
+          fi
+
           sudo -E concierge prepare -p k8s --extra-snaps=astral-uv,just \
-            ${{ inputs.juju-channel && format('--channel={0}', inputs.juju-channel) || '' }}
+            ${{ inputs.juju-channel && format('--juju-channel={0}', inputs.juju-channel) || '' }}
 
           mkdir -p ~/.kube
           sudo k8s kubectl config view --raw > ~/.kube/config
