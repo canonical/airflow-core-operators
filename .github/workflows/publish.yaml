@@ -23,6 +23,7 @@ jobs:
     if: ${{ needs.get-modified-charms.outputs.paths != '[]' }}
     permissions:
       contents: write
+      issues: write
       pull-requests: write
     uses: ./.github/workflows/tests.yaml
     with:
