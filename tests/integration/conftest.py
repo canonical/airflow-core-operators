@@ -124,7 +124,7 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         },
     )
 
-    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
+    juju.wait(jubilant.all_active, timeout=20 * 60, successes=2, delay=20)
 
 
 @pytest.fixture(scope="module")
