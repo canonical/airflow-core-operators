@@ -8,11 +8,16 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   tests:
     uses: ./.github/workflows/tests.yaml
     secrets: inherit
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     with:
       juju-channel: '4.0/edge'
       postgres-channel: '14/stable'
