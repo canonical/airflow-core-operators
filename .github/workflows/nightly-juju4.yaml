@@ -2,7 +2,7 @@ name: nightly-juju4
 
 on:
   schedule:
-    - cron: "0 2 * * *"
+    - cron: "17 2 * * *"
   workflow_dispatch:
 
 permissions:
@@ -18,6 +18,7 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+    # TODO: change this channel to 16/stable once #69 is fixed
     with:
       juju-channel: '4.0/edge'
       postgres-channel: '14/stable'
