@@ -37,7 +37,6 @@ jobs:
         charm-path: ${{ fromJSON(inputs.directories || '["charms/api-server","charms/scheduler","charms/dag-processor","charms/triggerer"]') }}
     permissions:
       contents: write
-      issues: write
       pull-requests: write
     steps:
       - name: Checkout
