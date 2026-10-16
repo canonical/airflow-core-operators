@@ -84,7 +84,7 @@ get-system-state:
 	echo "---"
 	juju status --model "$model" --format tabular
 	echo "--- juju debug-log"
-	juju debug-log --model "$model" --replay --no-tail || true
+	juju debug-log --model "$model" --replay --no-tail --lines 2000 || true
 	echo "--- pods"
 	kubectl get pods -n "$model" -o wide || true
 	echo "--- pod details (container/image-pull failures surface here)"
