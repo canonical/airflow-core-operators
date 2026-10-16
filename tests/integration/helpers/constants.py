@@ -65,7 +65,7 @@ SELF_SIGNED_CERT_APP = "self-signed-certificates"
 ALL_APPS = [POSTGRES_APP, PGBOUNCER_APP, COORDINATOR_APP] + list(CORE_APPS)
 
 POSTGRES_CHANNEL = os.environ.get("POSTGRES_CHANNEL") or "14/stable"
-POSTGRES_FORCE_DEPLOY = bool(os.environ.get("POSTGRES_FORCE_DEPLOY"))
+POSTGRES_FORCE_DEPLOY = os.environ.get("POSTGRES_FORCE_DEPLOY", "").lower() in ("1", "true", "yes")
 COORDINATOR_CHANNEL = "3.1/edge"
 TRAEFIK_CHANNEL = "latest/stable"
 SELF_SIGNED_CERT_CHANNEL = "1/stable"
