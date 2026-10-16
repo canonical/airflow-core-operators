@@ -1,47 +1,31 @@
 name: nightly-juju4
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
 on:
   schedule:
     - cron: "17 2 * * *"
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  actions: write
   issues: write
 
 jobs:
   tests:
-    uses: ./.github/workflows/tests.yaml
-    secrets: inherit
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-    # TODO: change this channel to 16/stable once #69 is fixed
+    uses: canonical/workflows-team/.github/workflows/juju-nightly.yaml@main
     with:
-      juju-channel: '4.0/edge'
-      postgres-channel: '14/stable'
-      postgres-force: true
-
-  report-failure:
-    needs: tests
-    if: ${{ failure() && github.event_name == 'schedule' }}
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-    steps:
-      - name: Open or update nightly Juju 4 failure issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          existing=$(gh issue list -R "$GITHUB_REPOSITORY" --label juju-4 --state open --json number --jq '.[0].number')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" -R "$GITHUB_REPOSITORY" --body "Nightly Juju 4 run failed again: $RUN_URL"
-          else
-            gh issue create -R "$GITHUB_REPOSITORY" --label juju-4 \
-              --title "Nightly Juju 4 integration tests failing" \
-              --body "Run: $RUN_URL"
-          fi
+      juju-channel: "4.1/edge"
+      test-commands: >-
+        ["just integration tests/integration/test_charms.py",
+         "just integration tests/integration/test_dag_execution.py",
+         "just integration tests/integration/test_functional.py",
+         "just integration tests/integration/test_ingress.py"]
+      setup-command: uv tool install tox
+      # TODO: change PostgreSQL to 16/stable once #69 is fixed
+      extra-env: '{"POSTGRES_CHANNEL":"14/stable","POSTGRES_FORCE_DEPLOY":"1"}'
+      purge-docker: true
+      free-disk-space: true
+      issue-label: juju-4
