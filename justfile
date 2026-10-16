@@ -77,8 +77,17 @@ unit:
 
 get-system-state:
 	#!/usr/bin/bash
+	model="${JUJU_MODEL:-test}"
 	df -h
 	echo "---"
 	juju models
 	echo "---"
-	juju status --model "${JUJU_MODEL:-test}" --format tabular
+	juju status --model "$model" --format tabular
+	echo "--- juju debug-log"
+	juju debug-log --model "$model" --replay --no-tail --lines 2000 || true
+	echo "--- pods"
+	kubectl get pods -n "$model" -o wide || true
+	echo "--- pod details (container/image-pull failures surface here)"
+	kubectl describe pods -n "$model" || true
+	echo "--- events"
+	kubectl get events -n "$model" --sort-by=.lastTimestamp || true

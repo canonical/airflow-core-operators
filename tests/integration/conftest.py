@@ -66,6 +66,7 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
     juju.deploy(
         constants.POSTGRES_APP,
         channel=constants.POSTGRES_CHANNEL,
+        force=constants.POSTGRES_FORCE_DEPLOY,
         trust=True,
         config={"profile": "testing"},
     )
@@ -123,7 +124,8 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         },
     )
 
-    juju.wait(jubilant.all_active, timeout=10 * 60, successes=2, delay=20)
+    # The coordinator's 2.8GB OCI image takes ~20min to pull on a cold CI runner.
+    juju.wait(jubilant.all_active, timeout=35 * 60, successes=2, delay=20)
 
 
 @pytest.fixture(scope="module")
