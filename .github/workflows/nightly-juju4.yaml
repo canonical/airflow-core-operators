@@ -1,0 +1,30 @@
+name: nightly-juju4
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  tests:
+    uses: canonical/workflows-team/.github/workflows/juju-nightly.yaml@main
+    with:
+      juju-channel: "4.1/edge"
+      test-commands: >-
+        ["just integration tests/integration/test_charms.py",
+         "just integration tests/integration/test_dag_execution.py",
+         "just integration tests/integration/test_functional.py",
+         "just integration tests/integration/test_ingress.py"]
+      setup-command: uv tool install tox
+      # TODO: change PostgreSQL to 16/stable once #69 is fixed
+      extra-env: '{"POSTGRES_CHANNEL":"14/stable","POSTGRES_FORCE_DEPLOY":"1"}'
+      purge-docker: true
+      free-disk-space: true
+      issue-label: juju-4
