@@ -20,3 +20,4 @@ jobs:
     uses: canonical/workflows-team/.github/workflows/terraform.yaml@main
     with:
       module-directory: ${{ matrix.module-directory }}
+      just-targets: '["mode=ci test"]'
