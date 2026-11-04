@@ -1,20 +1,21 @@
-name: nightly-juju4
+name: juju-4-testing
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
 on:
   schedule:
-    - cron: "17 2 * * *"
+    - cron: "17 2 * * 1"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   issues: write
 
 jobs:
   tests:
-    uses: canonical/workflows-team/.github/workflows/juju-nightly.yaml@main
+    uses: canonical/workflows-team/.github/workflows/juju-testing.yaml@main
     with:
       juju-channel: "4.1/edge"
       test-commands: >-
@@ -27,4 +28,4 @@ jobs:
       extra-env: '{"POSTGRES_CHANNEL":"14/stable","POSTGRES_FORCE_DEPLOY":"1"}'
       purge-docker: true
       free-disk-space: true
-      issue-label: juju-4
+      issue-labels: juju-4,bug
