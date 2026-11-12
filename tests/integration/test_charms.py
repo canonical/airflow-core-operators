@@ -7,6 +7,7 @@
 """Integration tests validating core charm behavior."""
 
 import json
+import re
 import pytest
 import jubilant
 import shlex
@@ -238,6 +239,29 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                         assert cfg.get(section, "otel_port") == "4318"
                         assert cfg.get(section, "otel_service") == app
                         assert cfg.get(section, "otel_ssl_active") == "False"
+
+        # Verify real Airflow metrics from the core charms reach the OTel collector.
+        metric_line_re = re.compile(
+            r"^otelcol_receiver_accepted_metric_points(?:\{([^}]*)\})?\s+([0-9.eE+-]+)$",
+            re.MULTILINE,
+        )
+        for attempt in Retrying(
+            stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True
+        ):
+            with attempt:
+                metrics_out = juju.ssh(
+                    "otelcol/0", "curl -s http://localhost:8888/metrics"
+                )
+                points = next(
+                    (
+                        float(m.group(2))
+                        for m in metric_line_re.finditer(metrics_out)
+                        if 'receiver="otlp' in (m.group(1) or "")
+                        and 'transport="http"' in (m.group(1) or "")
+                    ),
+                    None,
+                )
+                assert points is not None and points > 0
 
         juju.remove_relation(
             f"{constants.COORDINATOR_APP}:send-otlp",
