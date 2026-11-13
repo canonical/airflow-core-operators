@@ -2,6 +2,7 @@
 # See LICENSE file for licensing details.
 
 import dataclasses
+import hashlib
 import json
 import unittest.mock
 
@@ -260,6 +261,7 @@ def test_active_status_flow_scenario(context, state, container, api_server_relat
     assert layer.services[constants.SERVICE_NAME].user == "ubuntu"
     assert layer.services[constants.SERVICE_NAME].group == "ubuntu"
     assert not layer.services[constants.SERVICE_NAME].environment
+    assert not layer.log_targets
 
 
 def test_restart_when_existing_config_changes(context, state, container, api_server_relation):
@@ -349,8 +351,118 @@ def test_otel_config_rendered_and_otlp_endpoint_exposed(context, state, containe
         state_out = manager.run()
         assert manager.charm._config_requires.otlp_endpoint == "http://1.2.3.4:4318"
         app_name = manager.charm.app.name
+        charm_name = manager.charm.meta.name
+        unit_name = manager.charm.unit.name
 
     assert state_out.unit_status == ops.ActiveStatus()
-    fs = state_out.get_container(constants.CONTAINER_NAME).get_filesystem(context)
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
+    fs = out_container.get_filesystem(context)
     written_cfg = (fs / constants.AIRFLOW_CONFIG_PATH.lstrip("/")).read_text()
     assert f"otel_service = {app_name}" in written_cfg
+
+    layer = out_container.layers["api-server-base"]
+    target_name = f"{constants.SERVICE_NAME}-logs"
+    assert target_name in layer.log_targets
+    target = layer.log_targets[target_name]
+    assert target.type == "opentelemetry"
+    assert target.location == "http://1.2.3.4:4318"
+    assert target.override == "replace"
+    assert target.services == [constants.SERVICE_NAME]
+    assert target.labels == {
+        "juju_model": state_out.model.name,
+        "juju_model_uuid": state_out.model.uuid,
+        "juju_application": app_name,
+        "juju_charm": charm_name,
+        "juju_unit": unit_name,
+    }
+
+
+def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, container):
+    """Verify Pebble log-targets disable old targets and create new ones on rotation."""
+    secret = ops.testing.Secret(
+        {"sensitive-data": json.dumps({"secret": "s3cret"})},
+    )
+    config_template = "[core]\nfernet_key = {{ secret }}\n"
+    base_target = f"{constants.SERVICE_NAME}-logs"
+    existing_layer = ops.pebble.Layer(
+        {
+            "log-targets": {
+                base_target: {
+                    "override": "replace",
+                    "type": "opentelemetry",
+                    "location": "http://1.2.3.4:4318",
+                    "services": [constants.SERVICE_NAME],
+                }
+            }
+        }
+    )
+    container_with_target = dataclasses.replace(
+        container, layers={"api-server-base": existing_layer}
+    )
+
+    # 1. Endpoint unset: existing target is disabled with services: []
+    relation_unset = ops.testing.Relation(
+        "airflow-coordinator",
+        remote_app_data={
+            "config-template": config_template,
+            "secret-sensitive-data": secret.id,
+        },
+    )
+    state_unset = dataclasses.replace(
+        state,
+        relations=[relation_unset],
+        secrets=[secret],
+        containers=[container_with_target],
+    )
+
+    with (
+        unittest.mock.patch("ops.model.Container.replan", autospec=True),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True),
+    ):
+        state_out = context.run(context.on.pebble_ready(container_with_target), state_unset)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    layer = state_out.get_container(constants.CONTAINER_NAME).layers["api-server-base"]
+    assert base_target in layer.log_targets
+    target = layer.log_targets[base_target]
+    assert target.override == "replace"
+    assert target.type == "opentelemetry"
+    assert target.location == "http://1.2.3.4:4318"
+    assert target.services == []
+    assert not target.labels
+
+    # 2. Endpoint rotated: old target remains disabled, new hashed target is active
+    new_endpoint = "http://5.6.7.8:4318"
+    relation_rotated = ops.testing.Relation(
+        "airflow-coordinator",
+        remote_app_data={
+            "config-template": config_template,
+            "secret-sensitive-data": secret.id,
+            "otlp-endpoint": new_endpoint,
+        },
+    )
+    state_rotated = dataclasses.replace(
+        state_out,
+        relations=[relation_rotated],
+        secrets=[secret],
+    )
+
+    with (
+        unittest.mock.patch("ops.model.Container.replan", autospec=True),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True),
+    ):
+        state_out_rotated = context.run(
+            context.on.pebble_ready(container_with_target), state_rotated
+        )
+
+    assert state_out_rotated.unit_status == ops.ActiveStatus()
+    rotated_layer = state_out_rotated.get_container(constants.CONTAINER_NAME).layers[
+        "api-server-base"
+    ]
+    assert rotated_layer.log_targets[base_target].services == []
+    suffix = hashlib.sha256(new_endpoint.encode()).hexdigest()[:8]
+    rotated_target_name = f"{base_target}-{suffix}"
+    assert rotated_target_name in rotated_layer.log_targets
+    rotated_target = rotated_layer.log_targets[rotated_target_name]
+    assert rotated_target.location == new_endpoint
+    assert rotated_target.services == [constants.SERVICE_NAME]
