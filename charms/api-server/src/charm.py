@@ -107,14 +107,14 @@ class AirflowApiServerCharm(ops.CharmBase):
             )
 
     def _handle_ingress(self) -> None:
-        """Extract the ingress path and share it to configure Airflow's base_url.
+        """Extract the ingress path and URL, share them to configure Airflow's base_url.
 
-        The extracted path is passed to the airflow-coordinator, which uses it
-        to construct the global `base_url` configuration for the Airflow cluster.
+        The extracted path and full URL are passed to the airflow-coordinator, which uses
+        them to construct the global `base_url` configuration for the Airflow cluster.
 
-        - Clears the path if the relation is broken or unready.
-        - Extracts the path prefix (for routing_mode=path) from the
-           URL and sets it in the relation databag.
+        - Clears both when the relation is broken or unready.
+        - Extracts the path prefix (for routing_mode=path) from the URL and sets it in the
+          relation databag, along with the full ingress URL for external routing.
         - Clears the path if the extracted path is empty (for routing_mode=subdomain).
         """
         if (
@@ -122,12 +122,14 @@ class AirflowApiServerCharm(ops.CharmBase):
             or not self._ingress.url
         ):
             self._api_server_provides.clear_ingress_path()
+            self._api_server_provides.clear_ingress_url()
             return
         ingress_path = urlparse(self._ingress.url).path.strip("/") or None
         if ingress_path:
             self._api_server_provides.set_ingress_path(ingress_path)
         else:
             self._api_server_provides.clear_ingress_path()
+        self._api_server_provides.set_ingress_url(self._ingress.url)
 
     def _write_airflow_config(self, config_path: str) -> None:
         """Write configuration files to the workload container."""
