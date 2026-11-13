@@ -10,6 +10,8 @@ import ops
 import pytest
 from charms.airflow_security.v0.security_logging import PebbleServiceSecurityLogger
 
+import constants
+
 
 @pytest.mark.parametrize(
     ("method_name", "args", "event_name"),
