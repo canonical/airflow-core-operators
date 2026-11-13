@@ -12,7 +12,10 @@ These experimental Sigma rules match structured security events currently emitte
 | `charmed-airflow-triggerer-lifecycle.yml` | `airflow.triggerer` | `sys_startup`, `sys_shutdown`, `sys_restart`, `sys_crash` |
 | `charmed-airflow-coordinator-authz-admin.yml` | `airflow.coordinator` | `authz_admin` |
 
-The `appid` and `event` fields are parsed from the JSON log record. Preserve the full JSON object when forwarding logs; do not flatten away these fields.
+The ``appid`` and ``event`` fields are nested under ``owasp_event`` in the JSON
+record. Preserve that object when forwarding logs; do not flatten away the nested
+attributes. The Sigma rules use selectors such as ``owasp_event.appid`` and
+``owasp_event.event``.
 
 ## Validate And Convert
 

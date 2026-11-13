@@ -6,9 +6,9 @@ default:
 	just --list
 
 sync-security-logging:
-	cp charms/api-server/lib/charms/airflow_security/v0/security_logging.py charms/scheduler/lib/charms/airflow_security/v0/security_logging.py
-	cp charms/api-server/lib/charms/airflow_security/v0/security_logging.py charms/dag-processor/lib/charms/airflow_security/v0/security_logging.py
-	cp charms/api-server/lib/charms/airflow_security/v0/security_logging.py charms/triggerer/lib/charms/airflow_security/v0/security_logging.py
+	cp charms/api-server/src/security_logging.py charms/scheduler/src/security_logging.py
+	cp charms/api-server/src/security_logging.py charms/dag-processor/src/security_logging.py
+	cp charms/api-server/src/security_logging.py charms/triggerer/src/security_logging.py
 
 pack-charms: sync-security-logging clean-core-charms
 	#!/usr/bin/bash
@@ -52,7 +52,7 @@ lint: sync-security-logging
 
 	for charm in "${charms[@]}"; do
 		uv sync --frozen --group lint
-		cd ./charms/$charm && uv run tox -e lint && cd -
+		cd ./charms/$charm && uv tool run --from 'tox>=4,<5' tox -e lint && cd -
 	done
 
 format: sync-security-logging
@@ -66,7 +66,7 @@ format: sync-security-logging
 
 	for charm in "${charms[@]}"; do
 		uv sync --frozen --group format
-		cd ./charms/$charm && uv run tox -e format && cd -
+		cd ./charms/$charm && uv tool run --from 'tox>=4,<5' tox -e format && cd -
 	done
 
 # Run unit tests for all core charms

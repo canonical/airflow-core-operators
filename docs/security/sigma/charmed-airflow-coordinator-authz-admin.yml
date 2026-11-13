@@ -9,8 +9,8 @@ logsource:
     service: juju-charm
 detection:
     selection:
-        appid: airflow.coordinator
-        event|startswith: 'authz_admin:'
+        owasp_event.appid: airflow.coordinator
+        owasp_event.event|startswith: 'authz_admin:'
     condition: selection
 falsepositives:
     - Authorized role-mapping, OAuth, or credential rotation changes

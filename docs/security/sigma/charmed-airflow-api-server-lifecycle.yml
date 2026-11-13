@@ -9,8 +9,8 @@ logsource:
     service: juju-charm
 detection:
     selection:
-        appid: airflow.api-server
-        event|startswith:
+        owasp_event.appid: airflow.api-server
+        owasp_event.event|startswith:
             - 'sys_startup:'
             - 'sys_shutdown:'
             - 'sys_restart:'

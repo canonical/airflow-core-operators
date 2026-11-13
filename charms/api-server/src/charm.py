@@ -10,12 +10,12 @@ from urllib.parse import urlparse
 import ops
 from charms.airflow_api_server_k8s.v0.airflow_api_server import AirflowAPIServerProvides
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
-from charms.airflow_security.v0.security_logging import PebbleServiceSecurityLogger
 from charms.traefik_k8s.v2.ingress import (
     IngressPerAppRequirer,
 )
 
 import constants
+from security_logging import PebbleServiceSecurityLogger
 
 logger = logging.getLogger(__name__)
 

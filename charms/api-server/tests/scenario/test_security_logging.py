@@ -8,9 +8,9 @@ from unittest.mock import Mock
 
 import ops
 import pytest
-from charms.airflow_security.v0.security_logging import PebbleServiceSecurityLogger
 
 import constants
+from security_logging import PebbleServiceSecurityLogger
 
 
 @pytest.mark.parametrize(
@@ -37,21 +37,25 @@ def test_emits_system_event_json(caplog, method_name, args, event_name):
 
     with caplog.at_level(
         logging.WARNING,
-        logger="charms.airflow_security.v0.security_logging",
+        logger="security_logging",
     ):
         getattr(security_logger, method_name)(*args)
 
     record = next(
         record
         for record in caplog.records
-        if record.name == "charms.airflow_security.v0.security_logging"
+        if record.name == "security_logging"
     )
-    event = json.loads(record.getMessage())
+    event = json.loads(record.getMessage())["owasp_event"]
     datetime.fromisoformat(event["datetime"])
     assert event["appid"] == "airflow.api-server"
+    assert event["type"] == "security"
     assert event["event"] == event_name
     assert event["level"] == "WARN"
+    assert event["actor"]
     assert event["target"] == "api-server"
+    assert event["action"]
+    assert event["outcome"]
     assert event["data"]
 
 
@@ -69,7 +73,7 @@ def test_startup_is_not_logged_without_a_state_transition(caplog):
 
     with caplog.at_level(
         logging.WARNING,
-        logger="charms.airflow_security.v0.security_logging",
+        logger="security_logging",
     ):
         security_logger.log_startup_if_transitioned(was_running=True)
 

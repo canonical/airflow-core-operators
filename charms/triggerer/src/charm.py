@@ -8,9 +8,9 @@ import logging
 
 import ops
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
-from charms.airflow_security.v0.security_logging import PebbleServiceSecurityLogger
 
 import constants
+from security_logging import PebbleServiceSecurityLogger
 
 logger = logging.getLogger(__name__)
 
