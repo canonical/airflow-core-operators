@@ -14,7 +14,7 @@ LIBID = "8d7f0e2c6a1947ad9b74d3e2f1c0a5b6"
 LIBAPI = 0
 
 # Increment this PATCH version before using `charmcraft publish-lib`
-LIBPATCH = 0
+LIBPATCH = 1
 
 
 class PebbleServiceSecurityLogger:
