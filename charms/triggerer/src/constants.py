@@ -1,6 +1,7 @@
 """Shared constants for the Airflow Triggerer charm."""
 
-SERVICE_NAME = "airflow"
+ROCK_SERVICE_NAME = "airflow"
+SERVICE_NAME = "airflow-triggerer"
 CONTAINER_NAME = "airflow-triggerer"
 AIRFLOW_COMPONENT = "triggerer"
 AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-coordinator"

@@ -279,6 +279,10 @@ def test_active_status_flow_scenario(context, state, container, triggerer_relati
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     layer = out_container.layers["triggerer-base"]
+    assert constants.ROCK_SERVICE_NAME in layer.services
+    assert layer.services[constants.ROCK_SERVICE_NAME].command == "true"
+    assert layer.services[constants.ROCK_SERVICE_NAME].startup == "disabled"
+    assert layer.services[constants.ROCK_SERVICE_NAME].override == "replace"
     assert constants.SERVICE_NAME in layer.services
     assert layer.services[constants.SERVICE_NAME].command == "airflow triggerer"
     assert layer.services[constants.SERVICE_NAME].startup == "enabled"

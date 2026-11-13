@@ -65,7 +65,11 @@ SELF_SIGNED_CERT_APP = "self-signed-certificates"
 ALL_APPS = [POSTGRES_APP, PGBOUNCER_APP, COORDINATOR_APP] + list(CORE_APPS)
 
 POSTGRES_CHANNEL = os.environ.get("POSTGRES_CHANNEL") or "14/stable"
-POSTGRES_FORCE_DEPLOY = os.environ.get("POSTGRES_FORCE_DEPLOY", "").lower() in ("1", "true", "yes")
+POSTGRES_FORCE_DEPLOY = os.environ.get("POSTGRES_FORCE_DEPLOY", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 COORDINATOR_CHANNEL = "3.1/edge"
 TRAEFIK_CHANNEL = "latest/stable"
 SELF_SIGNED_CERT_CHANNEL = "1/stable"
@@ -86,7 +90,8 @@ AUTH_FILE = f"{AIRFLOW_HOME}/simple_auth_manager_passwords.json.generated"
 
 DAGS_FILE = f"{DEFAULT_DAGS_PATH}/test_dag.py"
 
-PEBBLE_SERVICE_NAME = "airflow"
+ROCK_PEBBLE_SERVICE_NAME = "airflow"
+PEBBLE_SERVICE_NAMES = {component: f"airflow-{component}" for component in CORE_CHARMS}
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
