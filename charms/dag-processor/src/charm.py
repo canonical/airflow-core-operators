@@ -8,6 +8,7 @@ import logging
 
 import ops
 from charms.airflow_coordinator_k8s.v0.airflow_coordinator import AirflowCoordinatorCoreRequires
+from charms.airflow_security.v0.security_logging import PebbleServiceSecurityLogger
 
 import constants
 
@@ -37,6 +38,12 @@ class AirflowDagProcessorCharm(ops.CharmBase):
         self.framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
 
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
+        self._security_events = PebbleServiceSecurityLogger(
+            container=self._container,
+            appid=constants.APP_ID,
+            component=constants.AIRFLOW_COMPONENT,
+            service_name=constants.SERVICE_NAME,
+        )
         self._config_requires = AirflowCoordinatorCoreRequires(
             charm=self,
             relation_name=constants.AIRFLOW_COORDINATOR_RELATION_NAME,
@@ -47,13 +54,15 @@ class AirflowDagProcessorCharm(ops.CharmBase):
 
     def _stop_service_and_remove_config(self) -> None:
         try:
-            logger.info(f"Stopping service {constants.SERVICE_NAME}")
+            was_running = self._security_events.is_running()
             self._container.stop(constants.SERVICE_NAME)
         except ops.pebble.APIError:
             raise ExitWithStatusError(
                 "Failed to stop pebble service",
                 ops.BlockedStatus,
             )
+        logger.info("Stopped service %s", constants.SERVICE_NAME)
+        self._security_events.log_shutdown_if_running(was_running, "required_relation_missing")
         config_path = constants.AIRFLOW_CONFIG_PATH
         if self._container.exists(config_path):
             self._container.remove_path(config_path, recursive=False)
@@ -126,19 +135,25 @@ class AirflowDagProcessorCharm(ops.CharmBase):
         Raises:
             ExitWithStatusError: If replanning fails.
         """
+        was_running = self._security_events.is_running()
         self._container.add_layer("dag-processor-base", self._dag_processor_layer, combine=True)
         try:
             self._container.replan()
             if restart_service:
                 self._container.restart(constants.SERVICE_NAME)
+                self._security_events.log_restart("configuration_changed")
+            else:
+                self._security_events.log_startup_if_transitioned(was_running)
 
         except ops.pebble.ChangeError as e:
+            self._security_events.log_crash_if_error()
             logger.exception("Pebble replan failed for dag-processor service: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
             )
         except ops.pebble.APIError as e:
+            self._security_events.log_crash_if_error()
             logger.exception("Pebble restart failed for dag-processor service: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
