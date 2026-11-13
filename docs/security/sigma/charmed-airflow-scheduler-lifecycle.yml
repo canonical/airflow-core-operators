@@ -1,0 +1,21 @@
+title: Charmed Airflow Scheduler Lifecycle Event
+id: 285f4a8f-1e1f-4679-b8ea-d39072c4c911
+status: experimental
+description: Detects charm-observed scheduler startup, shutdown, restart, or Pebble error events.
+author: Canonical Charmed Airflow
+date: 2026-11-13
+logsource:
+    product: airflow.scheduler
+    service: juju-charm
+detection:
+    selection:
+        owasp_event.appid: airflow.scheduler
+        owasp_event.event|startswith:
+            - 'sys_startup:'
+            - 'sys_shutdown:'
+            - 'sys_restart:'
+            - 'sys_crash:'
+    condition: selection
+falsepositives:
+    - Planned charm reconciliation, maintenance, or workload recovery
+level: low

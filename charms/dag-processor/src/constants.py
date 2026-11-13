@@ -3,6 +3,7 @@
 SERVICE_NAME = "airflow"
 CONTAINER_NAME = "airflow-dag-processor"
 AIRFLOW_COMPONENT = "dag-processor"
+APP_ID = "airflow.dag-processor"
 AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-coordinator"
 AIRFLOW_HOME = "/opt/airflow"
 AIRFLOW_CONFIG_PATH = f"{AIRFLOW_HOME}/airflow.cfg"

@@ -1,0 +1,21 @@
+title: Charmed Airflow DAG Processor Lifecycle Event
+id: 1c293f54-0839-4eba-9900-aea96d002e44
+status: experimental
+description: Detects charm-observed DAG processor startup, shutdown, restart, or Pebble error events.
+author: Canonical Charmed Airflow
+date: 2026-11-13
+logsource:
+    product: airflow.dag-processor
+    service: juju-charm
+detection:
+    selection:
+        owasp_event.appid: airflow.dag-processor
+        owasp_event.event|startswith:
+            - 'sys_startup:'
+            - 'sys_shutdown:'
+            - 'sys_restart:'
+            - 'sys_crash:'
+    condition: selection
+falsepositives:
+    - Planned charm reconciliation, maintenance, or workload recovery
+level: low

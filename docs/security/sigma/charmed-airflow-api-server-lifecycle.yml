@@ -1,0 +1,21 @@
+title: Charmed Airflow API Server Lifecycle Event
+id: 745c9ed3-ed28-4d3e-80f9-3c89d6f1a101
+status: experimental
+description: Detects charm-observed API server startup, shutdown, restart, or Pebble error events.
+author: Canonical Charmed Airflow
+date: 2026-11-13
+logsource:
+    product: airflow.api-server
+    service: juju-charm
+detection:
+    selection:
+        owasp_event.appid: airflow.api-server
+        owasp_event.event|startswith:
+            - 'sys_startup:'
+            - 'sys_shutdown:'
+            - 'sys_restart:'
+            - 'sys_crash:'
+    condition: selection
+falsepositives:
+    - Planned charm reconciliation, maintenance, or workload recovery
+level: low
