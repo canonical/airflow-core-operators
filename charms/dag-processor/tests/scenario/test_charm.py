@@ -1,4 +1,5 @@
 import dataclasses
+import json
 import unittest.mock
 
 import ops
@@ -312,3 +313,44 @@ def test_no_restart_when_config_unchanged(context, state, container, dag_process
 
     assert state_out.unit_status == ops.ActiveStatus()
     restart_mock.assert_not_called()
+
+
+def test_otel_config_rendered_and_otlp_endpoint_exposed(context, state, container):
+    """Verify OTel config renders component app name and exposes otlp_endpoint."""
+    secret = ops.testing.Secret(
+        {"sensitive-data": json.dumps({"secret": "s3cret"})},
+    )
+    config_template = (
+        "[core]\nfernet_key = {{ secret }}\n\n"
+        "[metrics]\notel_on = True\notel_host = 1.2.3.4\notel_port = 4318\n"
+        "otel_service = {{ otel_service }}\notel_ssl_active = False\n\n"
+        "[traces]\notel_on = True\notel_host = 1.2.3.4\notel_port = 4318\n"
+        "otel_service = {{ otel_service }}\notel_ssl_active = False\n"
+    )
+    relation = ops.testing.Relation(
+        "airflow-coordinator",
+        remote_app_data={
+            "config-template": config_template,
+            "secret-sensitive-data": secret.id,
+            "otlp-endpoint": "http://1.2.3.4:4318",
+        },
+    )
+    state_in = dataclasses.replace(
+        state,
+        relations=[relation],
+        secrets=[secret],
+    )
+
+    with (
+        unittest.mock.patch("ops.model.Container.replan", autospec=True),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True),
+        context(context.on.pebble_ready(container), state_in) as manager,
+    ):
+        state_out = manager.run()
+        assert manager.charm._config_requires.otlp_endpoint == "http://1.2.3.4:4318"
+        app_name = manager.charm.app.name
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    fs = state_out.get_container(constants.CONTAINER_NAME).get_filesystem(context)
+    written_cfg = (fs / constants.AIRFLOW_CONFIG_PATH.lstrip("/")).read_text()
+    assert f"otel_service = {app_name}" in written_cfg
