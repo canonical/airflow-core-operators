@@ -1,0 +1,21 @@
+title: Charmed Airflow Triggerer Lifecycle Event
+id: b27920fc-3383-4fdb-85c1-a6be4edfe786
+status: experimental
+description: Detects charm-observed triggerer startup, shutdown, restart, or Pebble error events.
+author: Canonical Charmed Airflow
+date: 2026-11-13
+logsource:
+    product: airflow.triggerer
+    service: juju-charm
+detection:
+    selection:
+        appid: airflow.triggerer
+        event|startswith:
+            - 'sys_startup:'
+            - 'sys_shutdown:'
+            - 'sys_restart:'
+            - 'sys_crash:'
+    condition: selection
+falsepositives:
+    - Planned charm reconciliation, maintenance, or workload recovery
+level: low

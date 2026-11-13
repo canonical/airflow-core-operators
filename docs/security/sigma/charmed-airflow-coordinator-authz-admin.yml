@@ -1,0 +1,17 @@
+title: Charmed Airflow Coordinator Administrative Security Change
+id: 9cefb6f0-7de7-45e0-a8a6-85867f6f1cbe
+status: experimental
+description: Detects changes to Airflow security policy or credential revisions observed by the coordinator charm.
+author: Canonical Charmed Airflow
+date: 2026-11-13
+logsource:
+    product: airflow.coordinator
+    service: juju-charm
+detection:
+    selection:
+        appid: airflow.coordinator
+        event|startswith: 'authz_admin:'
+    condition: selection
+falsepositives:
+    - Authorized role-mapping, OAuth, or credential rotation changes
+level: medium
