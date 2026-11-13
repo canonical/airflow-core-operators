@@ -56,7 +56,7 @@ jobs:
 
             for platform in $(jq -r '.[]' <<< "$platforms"); do
               case "$platform" in
-                amd64) runner="ubuntu-latest" ;;
+                amd64) runner="ubuntu-24.04" ;;
                 arm64) runner="ubuntu-24.04-arm" ;;
                 *)
                   echo "Unsupported platform '$platform' in $cfg" >&2
