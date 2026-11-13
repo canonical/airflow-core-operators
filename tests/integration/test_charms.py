@@ -7,6 +7,7 @@
 """Integration tests validating core charm behavior."""
 
 import json
+import re
 import pytest
 import jubilant
 import shlex
@@ -188,3 +189,109 @@ def test_core_charms_wait_when_database_unavailable(
         f"{constants.COORDINATOR_APP}:postgres",
     )
     juju.wait(jubilant.all_agents_idle, timeout=5 * 60, successes=3, delay=30)
+
+
+def test_send_otlp_propagates_otel_config_to_core_charms(
+    juju: jubilant.Juju,
+):
+    """Integrating coordinator with otelcol writes OTel config to all core charms."""
+    juju.deploy(
+        "opentelemetry-collector-k8s",
+        app="otelcol",
+        channel="0.130/stable",
+        trust=True,
+    )
+
+    try:
+        juju.integrate(
+            f"{constants.COORDINATOR_APP}:send-otlp",
+            "otelcol:receive-otlp",
+        )
+
+        juju.wait(
+            lambda status: (
+                jubilant.all_active(
+                    status,
+                    constants.COORDINATOR_APP,
+                    *constants.CORE_APPS,
+                )
+                and jubilant.all_blocked(status, "otelcol")
+                and jubilant.all_agents_idle(status)
+            ),
+            error=jubilant.any_error,
+            timeout=10 * 60,
+            successes=3,
+            delay=5,
+        )
+
+        for component, app in constants.CORE_CHARMS.items():
+            for attempt in Retrying(
+                stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True
+            ):
+                with attempt:
+                    cfg = read_airflow_config(
+                        juju, f"{app}/0", constants.CONTAINER_NAMES[component]
+                    )
+                    for section in ("metrics", "traces"):
+                        assert cfg.has_section(section)
+                        assert cfg.get(section, "otel_on") == "True"
+                        assert cfg.get(section, "otel_host").startswith("otelcol.")
+                        assert cfg.get(section, "otel_port") == "4318"
+                        assert cfg.get(section, "otel_service") == app
+                        assert cfg.get(section, "otel_ssl_active") == "False"
+
+        # Verify real Airflow metrics from the core charms reach the OTel collector.
+        metric_line_re = re.compile(
+            r"^otelcol_receiver_accepted_metric_points(?:\{([^}]*)\})?\s+([0-9.eE+-]+)$",
+            re.MULTILINE,
+        )
+        for attempt in Retrying(
+            stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True
+        ):
+            with attempt:
+                metrics_out = juju.ssh(
+                    "otelcol/0", "curl -s http://localhost:8888/metrics"
+                )
+                points = next(
+                    (
+                        float(m.group(2))
+                        for m in metric_line_re.finditer(metrics_out)
+                        if 'receiver="otlp' in (m.group(1) or "")
+                        and 'transport="http"' in (m.group(1) or "")
+                    ),
+                    None,
+                )
+                assert points is not None and points > 0
+
+        juju.remove_relation(
+            f"{constants.COORDINATOR_APP}:send-otlp",
+            "otelcol:receive-otlp",
+        )
+
+        juju.wait(
+            lambda status: (
+                jubilant.all_active(
+                    status,
+                    constants.COORDINATOR_APP,
+                    *constants.CORE_APPS,
+                )
+                and jubilant.all_agents_idle(status)
+                and "send-otlp" not in status.apps[constants.COORDINATOR_APP].relations
+            ),
+            error=jubilant.any_error,
+            timeout=10 * 60,
+        )
+
+        for component, app in constants.CORE_CHARMS.items():
+            for attempt in Retrying(
+                stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True
+            ):
+                with attempt:
+                    cfg = read_airflow_config(
+                        juju, f"{app}/0", constants.CONTAINER_NAMES[component]
+                    )
+                    assert not cfg.has_section("metrics")
+                    assert not cfg.has_section("traces")
+    finally:
+        juju.remove_application("otelcol", force=True)
+        juju.wait(lambda status: "otelcol" not in status.apps, timeout=5 * 60)
