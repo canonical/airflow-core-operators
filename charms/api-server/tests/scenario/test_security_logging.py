@@ -54,8 +54,8 @@ def test_emits_system_event_json(caplog, method_name, args, event_name):
     assert event["level"] == "WARN"
     assert event["actor"]
     assert event["target"] == "api-server"
-    assert event["action"]
-    assert event["outcome"]
+    assert "action" not in event
+    assert "outcome" not in event
     assert event["data"]
 
 
