@@ -208,15 +208,11 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
             "otelcol:receive-otlp",
         )
 
+        core_apps = [constants.COORDINATOR_APP, *constants.CORE_APPS]
         juju.wait(
             lambda status: (
-                jubilant.all_active(
-                    status,
-                    constants.COORDINATOR_APP,
-                    *constants.CORE_APPS,
-                )
-                and jubilant.all_blocked(status, "otelcol")
-                and jubilant.all_agents_idle(status)
+                jubilant.all_active(status, *core_apps)
+                and jubilant.all_agents_idle(status, *core_apps)
             ),
             error=jubilant.any_error,
             timeout=10 * 60,
@@ -240,7 +236,9 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                         assert cfg.get(section, "otel_service") == app
                         assert cfg.get(section, "otel_ssl_active") == "False"
 
-        # Verify real Airflow metrics from the core charms reach the OTel collector.
+        # Collector readiness is verified by delivery, not by its workload status:
+        # some collector versions can report blocked/unready while exposing the
+        # receiver relation and still accepting OTLP traffic.
         metric_line_re = re.compile(
             r"^otelcol_receiver_accepted_metric_points(?:\{([^}]*)\})?\s+([0-9.eE+-]+)$",
             re.MULTILINE,
@@ -275,7 +273,7 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                     constants.COORDINATOR_APP,
                     *constants.CORE_APPS,
                 )
-                and jubilant.all_agents_idle(status)
+                and jubilant.all_agents_idle(status, *core_apps)
                 and "send-otlp" not in status.apps[constants.COORDINATOR_APP].relations
             ),
             error=jubilant.any_error,

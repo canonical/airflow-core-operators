@@ -7,8 +7,7 @@ from typing import Any
 
 import ops
 from owasp_logger import OWASPLogger
-
-_OWASP_EVENT_KEY = "owasp_event"
+from owasp_logger.model import NESTED_JSON_KEY
 
 
 class _ContextLogger(logging.LoggerAdapter):
@@ -16,16 +15,16 @@ class _ContextLogger(logging.LoggerAdapter):
 
     def process(self, message: str, kwargs: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         extra = dict(kwargs.get("extra") or {})
-        event = extra.get(_OWASP_EVENT_KEY)
+        event = extra.get(NESTED_JSON_KEY)
         if event is not None:
             event = dict(event)
             event.update(self.extra)
             event["datetime"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
             if event.get("level") == "WARNING":
                 event["level"] = "WARN"
-            extra[_OWASP_EVENT_KEY] = event
+            extra[NESTED_JSON_KEY] = event
             kwargs["extra"] = extra
-            message = json.dumps({_OWASP_EVENT_KEY: event}, separators=(",", ":"))
+            message = json.dumps({NESTED_JSON_KEY: event}, separators=(",", ":"))
         return message, kwargs
 
 
@@ -44,7 +43,14 @@ class PebbleServiceSecurityLogger:
         self._service_name = service_name
         self._context_logger = _ContextLogger(
             logging.getLogger(__name__),
-            {"target": service_name, "actor": "", "action": "", "outcome": "", "data": {}},
+            {
+                "target": service_name,
+                "actor": "",
+                "action": "",
+                "outcome": "",
+                "component": component,
+                "data": {},
+            },
         )
         self._owasp_logger = OWASPLogger(appid=appid, logger=self._context_logger)
 
@@ -129,6 +135,7 @@ class PebbleServiceSecurityLogger:
                 "actor": actor,
                 "action": action,
                 "outcome": outcome,
+                "component": self._component,
                 "data": data,
             }
         )
