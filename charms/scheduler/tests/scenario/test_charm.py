@@ -191,16 +191,16 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     plan = out_container.layers["scheduler-base"]
-    assert constants.ROCK_SERVICE_NAME in plan.services
-    assert plan.services[constants.ROCK_SERVICE_NAME].command == "true"
-    assert plan.services[constants.ROCK_SERVICE_NAME].startup == "disabled"
-    assert plan.services[constants.ROCK_SERVICE_NAME].override == "replace"
-    assert constants.SERVICE_NAME in plan.services
-    assert plan.services[constants.SERVICE_NAME].command == "airflow scheduler"
-    assert plan.services[constants.SERVICE_NAME].startup == "enabled"
-    assert plan.services[constants.SERVICE_NAME].override == "replace"
-    assert plan.services[constants.SERVICE_NAME].user == "ubuntu"
-    assert plan.services[constants.SERVICE_NAME].group == "ubuntu"
+    assert "airflow" in plan.services
+    assert plan.services["airflow"].command == "true"
+    assert plan.services["airflow"].startup == "disabled"
+    assert plan.services["airflow"].override == "replace"
+    assert "airflow-scheduler" in plan.services
+    assert plan.services["airflow-scheduler"].command == "airflow scheduler"
+    assert plan.services["airflow-scheduler"].startup == "enabled"
+    assert plan.services["airflow-scheduler"].override == "replace"
+    assert plan.services["airflow-scheduler"].user == "ubuntu"
+    assert plan.services["airflow-scheduler"].group == "ubuntu"
 
 
 def test_restart_when_existing_config_changes(context, state, container, scheduler_relation):
