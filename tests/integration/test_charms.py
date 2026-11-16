@@ -317,6 +317,9 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                     assert target["labels"]["juju_charm"] == app
                     assert target["labels"]["juju_unit"] == f"{app}/0"
                     assert target["labels"].get("juju_model_uuid")
+                    assert target["labels"]["loki.resource.labels"] == (
+                        "juju_application, juju_charm, juju_model, juju_model_uuid, juju_unit"
+                    )
 
         for attempt in Retrying(
             stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True

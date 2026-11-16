@@ -196,6 +196,9 @@ class AirflowApiServerCharm(ops.CharmBase):
                     "juju_application": self.app.name,
                     "juju_charm": self.meta.name,
                     "juju_unit": self.unit.name,
+                    "loki.resource.labels": (
+                        "juju_application, juju_charm, juju_model, juju_model_uuid, juju_unit"
+                    ),
                 },
             }
 

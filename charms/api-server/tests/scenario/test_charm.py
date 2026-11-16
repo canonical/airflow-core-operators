@@ -374,6 +374,9 @@ def test_otel_config_rendered_and_otlp_endpoint_exposed(context, state, containe
         "juju_application": app_name,
         "juju_charm": charm_name,
         "juju_unit": unit_name,
+        "loki.resource.labels": (
+            "juju_application, juju_charm, juju_model, juju_model_uuid, juju_unit"
+        ),
     }
 
 
