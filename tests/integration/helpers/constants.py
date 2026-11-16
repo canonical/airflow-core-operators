@@ -91,6 +91,8 @@ AUTH_FILE = f"{AIRFLOW_HOME}/simple_auth_manager_passwords.json.generated"
 DAGS_FILE = f"{DEFAULT_DAGS_PATH}/test_dag.py"
 
 ROCK_PEBBLE_SERVICE_NAME = "airflow"
+# Expected Pebble service names per component; must stay in sync with
+# SERVICE_NAME in each charm's charms/<component>/src/constants.py.
 PEBBLE_SERVICE_NAMES = {component: f"airflow-{component}" for component in CORE_CHARMS}
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")

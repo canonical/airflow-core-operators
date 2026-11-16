@@ -192,16 +192,16 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     plan = out_container.layers["scheduler-base"]
-    assert constants.ROCK_SERVICE_NAME in plan.services
-    assert plan.services[constants.ROCK_SERVICE_NAME].command == "true"
-    assert plan.services[constants.ROCK_SERVICE_NAME].startup == "disabled"
-    assert plan.services[constants.ROCK_SERVICE_NAME].override == "replace"
-    assert constants.SERVICE_NAME in plan.services
-    assert plan.services[constants.SERVICE_NAME].command == "airflow scheduler"
-    assert plan.services[constants.SERVICE_NAME].startup == "enabled"
-    assert plan.services[constants.SERVICE_NAME].override == "replace"
-    assert plan.services[constants.SERVICE_NAME].user == "ubuntu"
-    assert plan.services[constants.SERVICE_NAME].group == "ubuntu"
+    assert "airflow" in plan.services
+    assert plan.services["airflow"].command == "true"
+    assert plan.services["airflow"].startup == "disabled"
+    assert plan.services["airflow"].override == "replace"
+    assert "airflow-scheduler" in plan.services
+    assert plan.services["airflow-scheduler"].command == "airflow scheduler"
+    assert plan.services["airflow-scheduler"].startup == "enabled"
+    assert plan.services["airflow-scheduler"].override == "replace"
+    assert plan.services["airflow-scheduler"].user == "ubuntu"
+    assert plan.services["airflow-scheduler"].group == "ubuntu"
     assert not plan.log_targets
 
 
@@ -498,13 +498,13 @@ def test_otel_config_rendered_and_otlp_endpoint_exposed(context, state, containe
     assert f"otel_service = {app_name}" in written_cfg
 
     layer = out_container.layers["scheduler-base"]
-    target_name = f"{constants.SERVICE_NAME}-logs"
+    target_name = "airflow-scheduler-logs"
     assert target_name in layer.log_targets
     target = layer.log_targets[target_name]
     assert target.type == "opentelemetry"
     assert target.location == "http://1.2.3.4:4318"
     assert target.override == "replace"
-    assert target.services == [constants.SERVICE_NAME]
+    assert target.services == ["airflow-scheduler"]
     assert target.labels == {
         "juju_model": state_out.model.name,
         "juju_model_uuid": state_out.model.uuid,
@@ -520,7 +520,7 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
         {"sensitive-data": json.dumps({"secret": "s3cret"})},
     )
     config_template = "[core]\nfernet_key = {{ secret }}\n"
-    base_target = f"{constants.SERVICE_NAME}-logs"
+    base_target = "airflow-scheduler-logs"
     existing_layer = ops.pebble.Layer(
         {
             "log-targets": {
@@ -528,7 +528,7 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
                     "override": "replace",
                     "type": "opentelemetry",
                     "location": "http://1.2.3.4:4318",
-                    "services": [constants.SERVICE_NAME],
+                    "services": ["airflow-scheduler"],
                 }
             }
         }
@@ -602,4 +602,4 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
     assert rotated_target_name in rotated_layer.log_targets
     rotated_target = rotated_layer.log_targets[rotated_target_name]
     assert rotated_target.location == new_endpoint
-    assert rotated_target.services == [constants.SERVICE_NAME]
+    assert rotated_target.services == ["airflow-scheduler"]

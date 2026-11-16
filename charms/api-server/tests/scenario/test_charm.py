@@ -250,17 +250,17 @@ def test_active_status_flow_scenario(context, state, container, api_server_relat
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     layer = out_container.layers["api-server-base"]
-    assert constants.ROCK_SERVICE_NAME in layer.services
-    assert layer.services[constants.ROCK_SERVICE_NAME].command == "true"
-    assert layer.services[constants.ROCK_SERVICE_NAME].startup == "disabled"
-    assert layer.services[constants.ROCK_SERVICE_NAME].override == "replace"
-    assert constants.SERVICE_NAME in layer.services
-    assert layer.services[constants.SERVICE_NAME].command == "airflow api-server"
-    assert layer.services[constants.SERVICE_NAME].startup == "enabled"
-    assert layer.services[constants.SERVICE_NAME].override == "replace"
-    assert layer.services[constants.SERVICE_NAME].user == "ubuntu"
-    assert layer.services[constants.SERVICE_NAME].group == "ubuntu"
-    assert not layer.services[constants.SERVICE_NAME].environment
+    assert "airflow" in layer.services
+    assert layer.services["airflow"].command == "true"
+    assert layer.services["airflow"].startup == "disabled"
+    assert layer.services["airflow"].override == "replace"
+    assert "airflow-api-server" in layer.services
+    assert layer.services["airflow-api-server"].command == "airflow api-server"
+    assert layer.services["airflow-api-server"].startup == "enabled"
+    assert layer.services["airflow-api-server"].override == "replace"
+    assert layer.services["airflow-api-server"].user == "ubuntu"
+    assert layer.services["airflow-api-server"].group == "ubuntu"
+    assert not layer.services["airflow-api-server"].environment
     assert not layer.log_targets
 
 
@@ -361,13 +361,13 @@ def test_otel_config_rendered_and_otlp_endpoint_exposed(context, state, containe
     assert f"otel_service = {app_name}" in written_cfg
 
     layer = out_container.layers["api-server-base"]
-    target_name = f"{constants.SERVICE_NAME}-logs"
+    target_name = "airflow-api-server-logs"
     assert target_name in layer.log_targets
     target = layer.log_targets[target_name]
     assert target.type == "opentelemetry"
     assert target.location == "http://1.2.3.4:4318"
     assert target.override == "replace"
-    assert target.services == [constants.SERVICE_NAME]
+    assert target.services == ["airflow-api-server"]
     assert target.labels == {
         "juju_model": state_out.model.name,
         "juju_model_uuid": state_out.model.uuid,
@@ -383,7 +383,7 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
         {"sensitive-data": json.dumps({"secret": "s3cret"})},
     )
     config_template = "[core]\nfernet_key = {{ secret }}\n"
-    base_target = f"{constants.SERVICE_NAME}-logs"
+    base_target = "airflow-api-server-logs"
     existing_layer = ops.pebble.Layer(
         {
             "log-targets": {
@@ -391,7 +391,7 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
                     "override": "replace",
                     "type": "opentelemetry",
                     "location": "http://1.2.3.4:4318",
-                    "services": [constants.SERVICE_NAME],
+                    "services": ["airflow-api-server"],
                 }
             }
         }
@@ -465,4 +465,4 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
     assert rotated_target_name in rotated_layer.log_targets
     rotated_target = rotated_layer.log_targets[rotated_target_name]
     assert rotated_target.location == new_endpoint
-    assert rotated_target.services == [constants.SERVICE_NAME]
+    assert rotated_target.services == ["airflow-api-server"]
