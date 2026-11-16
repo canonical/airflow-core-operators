@@ -392,13 +392,17 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
                     "type": "opentelemetry",
                     "location": "http://1.2.3.4:4318",
                     "services": ["airflow-dag-processor"],
-                }
+                },
+                "other-custom-target": {
+                    "override": "replace",
+                    "type": "loki",
+                    "location": "http://loki:3100/loki/api/v1/push",
+                    "services": ["airflow-dag-processor"],
+                },
             }
         }
     )
-    container_with_target = dataclasses.replace(
-        container, layers={"dag-processor-base": existing_layer}
-    )
+    container_with_target = dataclasses.replace(container, layers={"other-layer": existing_layer})
 
     # 1. Endpoint unset: existing target is disabled with services: []
     relation_unset = ops.testing.Relation(
@@ -424,6 +428,7 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
     assert state_out.unit_status == ops.ActiveStatus()
     layer = state_out.get_container(constants.CONTAINER_NAME).layers["dag-processor-base"]
     assert base_target in layer.log_targets
+    assert "other-custom-target" not in layer.log_targets
     target = layer.log_targets[base_target]
     assert target.override == "replace"
     assert target.type == "opentelemetry"

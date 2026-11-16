@@ -69,7 +69,9 @@ class AirflowSchedulerCharm(ops.CharmBase):
                 active_target_name = f"{base_target_name}-{suffix}"
 
         for name, existing in existing_targets.items():
-            if name != active_target_name:
+            if name != active_target_name and (
+                name == base_target_name or name.startswith(f"{base_target_name}-")
+            ):
                 log_targets[name] = {
                     "override": "replace",
                     "type": existing.type,
