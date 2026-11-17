@@ -99,9 +99,35 @@ class AirflowSchedulerCharm(ops.CharmBase):
 
         return log_targets
 
+    def _otel_resource_attributes(self) -> str:
+        """Build the OTEL_RESOURCE_ATTRIBUTES value with Juju topology and instance ID."""
+        instance_id = (
+            f"{self.model.name}_{self.model.uuid}_{self.app.name}_{self.unit.name}"
+        )
+        return (
+            f"juju_application={self.app.name},"
+            f"juju_charm={self.meta.name},"
+            f"juju_model={self.model.name},"
+            f"juju_model_uuid={self.model.uuid},"
+            f"juju_unit={self.unit.name},"
+            f"service.instance.id={instance_id}"
+        )
+
     @property
     def _airflow_scheduler_layer(self) -> LayerDict:
         """Return the service Pebble layer."""
+        service: ops.pebble.ServiceDict = {
+            "override": "replace",
+            "summary": "The airflow scheduler service.",
+            "command": "airflow scheduler",
+            "startup": "enabled",
+            "user": constants.WORKLOAD_USER,
+            "group": constants.WORKLOAD_GROUP,
+        }
+        if self._config_requires.otlp_endpoint:
+            service["environment"] = {
+                "OTEL_RESOURCE_ATTRIBUTES": self._otel_resource_attributes()
+            }
         layer: LayerDict = {
             "services": {
                 constants.ROCK_SERVICE_NAME: {
@@ -109,14 +135,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
                     "command": "true",
                     "startup": "disabled",
                 },
-                constants.SERVICE_NAME: {
-                    "override": "replace",
-                    "summary": "The airflow scheduler service.",
-                    "command": "airflow scheduler",
-                    "startup": "enabled",
-                    "user": constants.WORKLOAD_USER,
-                    "group": constants.WORKLOAD_GROUP,
-                },
+                constants.SERVICE_NAME: service,
             },
         }
         if log_targets := self._log_targets_config():

@@ -361,6 +361,17 @@ def test_otel_config_rendered_and_otlp_endpoint_exposed(context, state, containe
     assert f"otel_service = {app_name}" in written_cfg
 
     layer = out_container.layers["api-server-base"]
+    expected_instance_id = f"{state_out.model.name}_{state_out.model.uuid}_{app_name}_{unit_name}"
+    assert layer.services["airflow-api-server"].environment == {
+        "OTEL_RESOURCE_ATTRIBUTES": (
+            f"juju_application={app_name},"
+            f"juju_charm={charm_name},"
+            f"juju_model={state_out.model.name},"
+            f"juju_model_uuid={state_out.model.uuid},"
+            f"juju_unit={unit_name},"
+            f"service.instance.id={expected_instance_id}"
+        )
+    }
     target_name = "airflow-api-server-logs"
     assert target_name in layer.log_targets
     target = layer.log_targets[target_name]
@@ -430,6 +441,7 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
 
     assert state_out.unit_status == ops.ActiveStatus()
     layer = state_out.get_container(constants.CONTAINER_NAME).layers["api-server-base"]
+    assert not layer.services["airflow-api-server"].environment
     assert base_target in layer.log_targets
     assert "other-custom-target" not in layer.log_targets
     target = layer.log_targets[base_target]

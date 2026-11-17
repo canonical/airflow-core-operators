@@ -320,6 +320,18 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                     assert target["labels"]["loki.resource.labels"] == (
                         "juju_application, juju_charm, juju_model, juju_model_uuid, juju_unit"
                     )
+                    service_env = plan["services"][service_name].get("environment", {})
+                    expected_instance_id = (
+                        f"{juju.model}_{target['labels']['juju_model_uuid']}_{app}_{app}/0"
+                    )
+                    assert service_env.get("OTEL_RESOURCE_ATTRIBUTES") == (
+                        f"juju_application={app},"
+                        f"juju_charm={app},"
+                        f"juju_model={juju.model},"
+                        f"juju_model_uuid={target['labels']['juju_model_uuid']},"
+                        f"juju_unit={app}/0,"
+                        f"service.instance.id={expected_instance_id}"
+                    )
 
         for attempt in Retrying(
             stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True
@@ -382,6 +394,8 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                     log_targets = plan.get("log-targets", {})
                     assert target_name in log_targets
                     assert log_targets[target_name].get("services") == []
+                    service_env = plan["services"][service_name].get("environment", {})
+                    assert "OTEL_RESOURCE_ATTRIBUTES" not in service_env
 
         baseline_disconnected = _accepted_otlp_counter(
             juju, "otelcol/0", "otelcol_receiver_accepted_log_records"

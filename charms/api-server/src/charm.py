@@ -204,6 +204,20 @@ class AirflowApiServerCharm(ops.CharmBase):
 
         return log_targets
 
+    def _otel_resource_attributes(self) -> str:
+        """Build the OTEL_RESOURCE_ATTRIBUTES value with Juju topology and instance ID."""
+        instance_id = (
+            f"{self.model.name}_{self.model.uuid}_{self.app.name}_{self.unit.name}"
+        )
+        return (
+            f"juju_application={self.app.name},"
+            f"juju_charm={self.meta.name},"
+            f"juju_model={self.model.name},"
+            f"juju_model_uuid={self.model.uuid},"
+            f"juju_unit={self.unit.name},"
+            f"service.instance.id={instance_id}"
+        )
+
     @property
     def _api_server_layer(self) -> ops.pebble.LayerDict:
         """Define the Pebble layer for the workload."""
@@ -215,6 +229,7 @@ class AirflowApiServerCharm(ops.CharmBase):
             "user": constants.WORKLOAD_USER,
             "group": constants.WORKLOAD_GROUP,
         }
+        environment: dict[str, str] = {}
 
         if self._ingress.url:
             service["command"] += " --proxy-headers"
@@ -222,7 +237,13 @@ class AirflowApiServerCharm(ops.CharmBase):
             # Airflow API server every time the proxy IP changes.
             # This is safe because traffic reaching this container is already
             # gated by the cluster's internal network and the Ingress controller.
-            service["environment"] = {"FORWARDED_ALLOW_IPS": "*"}
+            environment["FORWARDED_ALLOW_IPS"] = "*"
+
+        if self._config_requires.otlp_endpoint:
+            environment["OTEL_RESOURCE_ATTRIBUTES"] = self._otel_resource_attributes()
+
+        if environment:
+            service["environment"] = environment
 
         layer: ops.pebble.LayerDict = {
             "services": {

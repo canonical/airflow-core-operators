@@ -149,9 +149,35 @@ class AirflowTriggererCharm(ops.CharmBase):
 
         return log_targets
 
+    def _otel_resource_attributes(self) -> str:
+        """Build the OTEL_RESOURCE_ATTRIBUTES value with Juju topology and instance ID."""
+        instance_id = (
+            f"{self.model.name}_{self.model.uuid}_{self.app.name}_{self.unit.name}"
+        )
+        return (
+            f"juju_application={self.app.name},"
+            f"juju_charm={self.meta.name},"
+            f"juju_model={self.model.name},"
+            f"juju_model_uuid={self.model.uuid},"
+            f"juju_unit={self.unit.name},"
+            f"service.instance.id={instance_id}"
+        )
+
     @property
     def _triggerer_layer(self) -> ops.pebble.LayerDict:
         """Define the Pebble layer for the workload."""
+        service: ops.pebble.ServiceDict = {
+            "override": "replace",
+            "summary": "A service that runs the triggerer workload.",
+            "command": "airflow triggerer",
+            "startup": "enabled",
+            "user": constants.WORKLOAD_USER,
+            "group": constants.WORKLOAD_GROUP,
+        }
+        if self._config_requires.otlp_endpoint:
+            service["environment"] = {
+                "OTEL_RESOURCE_ATTRIBUTES": self._otel_resource_attributes()
+            }
         layer: ops.pebble.LayerDict = {
             "services": {
                 constants.ROCK_SERVICE_NAME: {
@@ -159,14 +185,7 @@ class AirflowTriggererCharm(ops.CharmBase):
                     "command": "true",
                     "startup": "disabled",
                 },
-                constants.SERVICE_NAME: {
-                    "override": "replace",
-                    "summary": "A service that runs the triggerer workload.",
-                    "command": "airflow triggerer",
-                    "startup": "enabled",
-                    "user": constants.WORKLOAD_USER,
-                    "group": constants.WORKLOAD_GROUP,
-                },
+                constants.SERVICE_NAME: service,
             },
         }
         if log_targets := self._log_targets_config():
