@@ -486,3 +486,39 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
     rotated_target = rotated_layer.log_targets[rotated_target_name]
     assert rotated_target.location == new_endpoint
     assert rotated_target.services == ["airflow-api-server"]
+
+    # 3. Rotate back to original endpoint (A -> B -> A): base target is re-enabled, B disabled
+    container_after_b = dataclasses.replace(
+        container,
+        layers={"other-layer": existing_layer, "api-server-base": rotated_layer},
+    )
+    relation_back_to_a = ops.testing.Relation(
+        "airflow-coordinator",
+        remote_app_data={
+            "config-template": config_template,
+            "secret-sensitive-data": secret.id,
+            "otlp-endpoint": "http://1.2.3.4:4318",
+        },
+    )
+    state_back_to_a = dataclasses.replace(
+        state_out_rotated,
+        relations=[relation_back_to_a],
+        secrets=[secret],
+        containers=[container_after_b],
+    )
+
+    with (
+        unittest.mock.patch("ops.model.Container.replan", autospec=True),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True),
+    ):
+        state_out_a_again = context.run(
+            context.on.pebble_ready(container_after_b), state_back_to_a
+        )
+
+    assert state_out_a_again.unit_status == ops.ActiveStatus()
+    layer_a_again = state_out_a_again.get_container(constants.CONTAINER_NAME).layers[
+        "api-server-base"
+    ]
+    assert layer_a_again.log_targets[base_target].location == "http://1.2.3.4:4318"
+    assert layer_a_again.log_targets[base_target].services == ["airflow-api-server"]
+    assert layer_a_again.log_targets[rotated_target_name].services == []

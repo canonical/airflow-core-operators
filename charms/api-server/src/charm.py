@@ -206,9 +206,7 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _otel_resource_attributes(self) -> str:
         """Build the OTEL_RESOURCE_ATTRIBUTES value with Juju topology and instance ID."""
-        instance_id = (
-            f"{self.model.name}_{self.model.uuid}_{self.app.name}_{self.unit.name}"
-        )
+        instance_id = f"{self.model.name}_{self.model.uuid}_{self.app.name}_{self.unit.name}"
         return (
             f"juju_application={self.app.name},"
             f"juju_charm={self.meta.name},"

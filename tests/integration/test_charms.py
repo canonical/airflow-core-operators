@@ -227,12 +227,37 @@ def _accepted_otlp_counter(
     )
 
 
-def _emit_airflow_logs(juju: jubilant.Juju) -> None:
-    """Trigger stdout log lines from the API server workload without restarting any service."""
-    juju.ssh(
-        f"{constants.CORE_CHARMS['api-server']}/0",
-        "curl -s http://localhost:8080/api/v2/monitor/health > /dev/null",
-    )
+def _emit_airflow_logs(juju: jubilant.Juju, component: str = "api-server") -> None:
+    """Trigger stdout log lines from a core workload without restarting any service."""
+    http_log_triggers = {
+        "api-server": "http://localhost:8080/api/v2/monitor/health",
+        "scheduler": "http://localhost:8793/health",
+        "triggerer": "http://localhost:8794/health",
+    }
+    if url := http_log_triggers.get(component):
+        juju.ssh(
+            f"{constants.CORE_CHARMS[component]}/0",
+            f"curl -s {url} > /dev/null || true",
+        )
+
+
+def _assert_all_charms_forward_logs(juju: jubilant.Juju, collector_unit: str) -> None:
+    """Verify that emitting logs from each core charm increments the collector's log counter."""
+    for component in constants.CORE_CHARMS:
+        baseline = _accepted_otlp_counter(
+            juju, collector_unit, "otelcol_receiver_accepted_log_records"
+        )
+        for attempt in Retrying(
+            stop=stop_after_attempt(12), wait=wait_fixed(5), reraise=True
+        ):
+            with attempt:
+                _emit_airflow_logs(juju, component)
+                assert (
+                    _accepted_otlp_counter(
+                        juju, collector_unit, "otelcol_receiver_accepted_log_records"
+                    )
+                    > baseline
+                )
 
 
 def test_send_otlp_propagates_otel_config_to_core_charms(
@@ -321,9 +346,7 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                         "juju_application, juju_charm, juju_model, juju_model_uuid, juju_unit"
                     )
                     service_env = plan["services"][service_name].get("environment", {})
-                    expected_instance_id = (
-                        f"{juju.model}_{target['labels']['juju_model_uuid']}_{app}_{app}/0"
-                    )
+                    expected_instance_id = f"{juju.model}_{target['labels']['juju_model_uuid']}_{app}_{app}/0"
                     assert service_env.get("OTEL_RESOURCE_ATTRIBUTES") == (
                         f"juju_application={app},"
                         f"juju_charm={app},"
@@ -333,20 +356,15 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                         f"service.instance.id={expected_instance_id}"
                     )
 
+        _assert_all_charms_forward_logs(juju, "otelcol/0")
+
         for attempt in Retrying(
             stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True
         ):
             with attempt:
-                _emit_airflow_logs(juju)
                 assert (
                     _accepted_otlp_counter(
                         juju, "otelcol/0", "otelcol_receiver_accepted_metric_points"
-                    )
-                    > 0
-                )
-                assert (
-                    _accepted_otlp_counter(
-                        juju, "otelcol/0", "otelcol_receiver_accepted_log_records"
                     )
                     > 0
                 )
@@ -400,7 +418,8 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
         baseline_disconnected = _accepted_otlp_counter(
             juju, "otelcol/0", "otelcol_receiver_accepted_log_records"
         )
-        _emit_airflow_logs(juju)
+        for component in constants.CORE_CHARMS:
+            _emit_airflow_logs(juju, component)
         assert (
             _accepted_otlp_counter(
                 juju, "otelcol/0", "otelcol_receiver_accepted_log_records"
@@ -430,20 +449,7 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
             delay=5,
         )
 
-        baseline_before_reconnect_logs = _accepted_otlp_counter(
-            juju, "otelcol/0", "otelcol_receiver_accepted_log_records"
-        )
-        for attempt in Retrying(
-            stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True
-        ):
-            with attempt:
-                _emit_airflow_logs(juju)
-                assert (
-                    _accepted_otlp_counter(
-                        juju, "otelcol/0", "otelcol_receiver_accepted_log_records"
-                    )
-                    > baseline_before_reconnect_logs
-                )
+        _assert_all_charms_forward_logs(juju, "otelcol/0")
 
         # Step 5: Rotate to a different collector endpoint and verify old target is disabled and new target receives logs.
         juju.remove_relation(
@@ -507,24 +513,67 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                         service_name
                     ]
 
-        for attempt in Retrying(
-            stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True
-        ):
-            with attempt:
-                _emit_airflow_logs(juju)
-                assert (
-                    _accepted_otlp_counter(
-                        juju,
-                        "otelcol-rotated/0",
-                        "otelcol_receiver_accepted_log_records",
-                    )
-                    > 0
+        _assert_all_charms_forward_logs(juju, "otelcol-rotated/0")
+
+        # Step 6: Rotate back to original collector (A -> B -> A) and verify base target resumes forwarding.
+        juju.remove_relation(
+            f"{constants.COORDINATOR_APP}:send-otlp",
+            "otelcol-rotated:receive-otlp",
+        )
+        juju.wait(
+            lambda status: (
+                "send-otlp" not in status.apps[constants.COORDINATOR_APP].relations
+                and jubilant.all_agents_idle(status)
+            ),
+            error=jubilant.any_error,
+            timeout=10 * 60,
+        )
+
+        juju.integrate(
+            f"{constants.COORDINATOR_APP}:send-otlp",
+            "otelcol:receive-otlp",
+        )
+        juju.wait(
+            lambda status: (
+                jubilant.all_active(
+                    status,
+                    constants.COORDINATOR_APP,
+                    *constants.CORE_APPS,
                 )
+                and jubilant.all_blocked(status, "otelcol")
+                and jubilant.all_agents_idle(status)
+            ),
+            error=jubilant.any_error,
+            timeout=10 * 60,
+            successes=3,
+            delay=5,
+        )
+
+        for component, app in constants.CORE_CHARMS.items():
+            service_name = constants.PEBBLE_SERVICE_NAMES[component]
+            base_target_name = f"{service_name}-logs"
+            rotated_target_name = f"{base_target_name}-{rotated_suffix}"
+            for attempt in Retrying(
+                stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True
+            ):
+                with attempt:
+                    plan = yaml.safe_load(
+                        juju.ssh(
+                            f"{app}/0",
+                            "pebble plan",
+                            container=constants.CONTAINER_NAMES[component],
+                        )
+                    )
+                    log_targets = plan.get("log-targets", {})
+                    assert log_targets[base_target_name]["services"] == [service_name]
+                    assert log_targets[rotated_target_name].get("services") == []
+
+        _assert_all_charms_forward_logs(juju, "otelcol/0")
 
         # Clean up relation before removing collector apps.
         juju.remove_relation(
             f"{constants.COORDINATOR_APP}:send-otlp",
-            "otelcol-rotated:receive-otlp",
+            "otelcol:receive-otlp",
         )
         juju.wait(
             lambda status: (
