@@ -16,6 +16,16 @@ import constants
 
 logger = logging.getLogger(__name__)
 
+PROVIDES_META = {
+    "name": "airflow-api-server",
+    "provides": {
+        constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT: {
+            "interface": "airflow_api_server",
+            "limit": 1,
+        },
+    },
+}
+
 
 class AirflowAPIServerMockCharm(ops.CharmBase):
     """Mock Airflow API Server charm."""
@@ -57,15 +67,7 @@ class AirflowAPIServerRequirerMockCharm(ops.CharmBase):
 def provides_application_context():
     return ops.testing.Context(
         charm_type=AirflowAPIServerMockCharm,
-        meta={
-            "name": "airflow-api-server",
-            "provides": {
-                constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT: {
-                    "interface": "airflow_api_server",
-                    "limit": 1,
-                },
-            },
-        },
+        meta=PROVIDES_META,
     )
 
 
@@ -168,39 +170,24 @@ class TestAirflowAPIServerProvides:
         )
 
 
-class AirflowAPIServerMockCharmWithIngress(ops.CharmBase):
-    """Mock Airflow API Server charm that can set ingress URL."""
+class AirflowAPIServerMockCharmWithIngress(AirflowAPIServerMockCharm):
+    """Mock Airflow API Server charm that also sets an ingress URL on start."""
 
     def __init__(self, *args):
         super().__init__(*args)
 
-        self.provides = AirflowAPIServerProvides(
-            self,
-            constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT,
-            "test-host",
-            "test-port",
-        )
-
         self.framework.observe(self.on.start, self._on_start)
-        self.unit.status = ops.ActiveStatus()
 
     def _on_start(self, event: ops.StartEvent) -> None:
-        self.provides.set_ingress_url("https://example.com/airflow")
+        # Subdomain-style URL: the ingress lib normalises it to a trailing "/".
+        self.provides.set_ingress_url("https://example.com/")
 
 
 @pytest.fixture(scope="function")
 def provides_application_context_with_ingress():
     return ops.testing.Context(
         charm_type=AirflowAPIServerMockCharmWithIngress,
-        meta={
-            "name": "airflow-api-server",
-            "provides": {
-                constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT: {
-                    "interface": "airflow_api_server",
-                    "limit": 1,
-                },
-            },
-        },
+        meta=PROVIDES_META,
     )
 
 
@@ -208,7 +195,7 @@ class TestAirflowAPIServerProvidesIngress:
     def test_set_ingress_url(
         self, provides_application_context_with_ingress, provides_application_state
     ):
-        """Ensures proper write of ingress_url in the relation databag."""
+        """Ensures ingress_url is written to the databag with trailing slash stripped."""
         state_out = provides_application_context_with_ingress.run(
             provides_application_context_with_ingress.on.start(), provides_application_state
         )
@@ -217,7 +204,8 @@ class TestAirflowAPIServerProvidesIngress:
         relation_data = state_out.get_relations(constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT)[
             0
         ].local_app_data
-        assert relation_data.get("ingress_url") == "https://example.com/airflow"
+        # Stored verbatim minus the trailing slash added in subdomain mode.
+        assert relation_data.get("ingress_url") == "https://example.com"
         assert relation_data.get("host") == "test-host"
         assert relation_data.get("port") == "test-port"
 
@@ -235,7 +223,11 @@ class TestAirflowAPIServerProvidesIngress:
         relation_data = state_out.get_relations(constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT)[
             0
         ].local_app_data
+        # The leader guard is shared across all setters, so an empty databag is
+        # a stronger signal that the no-op worked than checking ingress_url alone.
         assert "ingress_url" not in relation_data
+        assert "host" not in relation_data
+        assert "port" not in relation_data
 
 
 class TestAirflowAPIServerRequires:
