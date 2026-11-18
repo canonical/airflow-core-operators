@@ -176,7 +176,16 @@ class AirflowApiServerCharm(ops.CharmBase):
             # gated by the cluster's internal network and the Ingress controller.
             service["environment"] = {"FORWARDED_ALLOW_IPS": "*"}
 
-        layer: ops.pebble.LayerDict = {"services": {constants.SERVICE_NAME: service}}
+        layer: ops.pebble.LayerDict = {
+            "services": {
+                constants.ROCK_SERVICE_NAME: {
+                    "override": "replace",
+                    "command": "true",
+                    "startup": "disabled",
+                },
+                constants.SERVICE_NAME: service,
+            }
+        }
         return layer
 
     def _add_layer_and_replan(self, restart_service: bool = False) -> None:

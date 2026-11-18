@@ -249,13 +249,17 @@ def test_active_status_flow_scenario(context, state, container, api_server_relat
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     layer = out_container.layers["api-server-base"]
-    assert constants.SERVICE_NAME in layer.services
-    assert layer.services[constants.SERVICE_NAME].command == "airflow api-server"
-    assert layer.services[constants.SERVICE_NAME].startup == "enabled"
-    assert layer.services[constants.SERVICE_NAME].override == "replace"
-    assert layer.services[constants.SERVICE_NAME].user == "ubuntu"
-    assert layer.services[constants.SERVICE_NAME].group == "ubuntu"
-    assert not layer.services[constants.SERVICE_NAME].environment
+    assert "airflow" in layer.services
+    assert layer.services["airflow"].command == "true"
+    assert layer.services["airflow"].startup == "disabled"
+    assert layer.services["airflow"].override == "replace"
+    assert "airflow-api-server" in layer.services
+    assert layer.services["airflow-api-server"].command == "airflow api-server"
+    assert layer.services["airflow-api-server"].startup == "enabled"
+    assert layer.services["airflow-api-server"].override == "replace"
+    assert layer.services["airflow-api-server"].user == "ubuntu"
+    assert layer.services["airflow-api-server"].group == "ubuntu"
+    assert not layer.services["airflow-api-server"].environment
 
 
 def test_restart_when_existing_config_changes(context, state, container, api_server_relation):

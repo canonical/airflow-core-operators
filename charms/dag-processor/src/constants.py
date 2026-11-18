@@ -1,6 +1,7 @@
 """Shared constants for the Airflow API Server charm."""
 
-SERVICE_NAME = "airflow"
+ROCK_SERVICE_NAME = "airflow"
+SERVICE_NAME = "airflow-dag-processor"
 CONTAINER_NAME = "airflow-dag-processor"
 AIRFLOW_COMPONENT = "dag-processor"
 AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-coordinator"
