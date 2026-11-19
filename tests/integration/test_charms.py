@@ -55,9 +55,21 @@ def test_pebble_services_and_config_exist(
                 f"{constants.WORKLOAD_USER}:{constants.WORKLOAD_GROUP}, got {ownership}"
             )
 
+            service_name = constants.PEBBLE_SERVICE_NAMES[component]
             assert pebble_service_is_running(
-                juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
-            ), f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active."
+                juju, f"{app}/0", component, service_name
+            ), f"{app}: pebble service '{service_name}' not active."
+
+            rock_service_status = get_pebble_service_status(
+                juju, component, f"{app}/0", constants.ROCK_PEBBLE_SERVICE_NAME
+            )
+            assert (
+                rock_service_status["startup"] == "disabled"
+                and rock_service_status["current"] == "inactive"
+            ), (
+                f"{app}: expected rock pebble service '{constants.ROCK_PEBBLE_SERVICE_NAME}' "
+                f"to be disabled and inactive, got {rock_service_status}"
+            )
 
 
 def test_airflow_cluster_health_via_api_endpoint(
@@ -167,22 +179,24 @@ def test_core_charms_wait_when_database_unavailable(
         )
         expected_state = "active" if component == "api-server" else "backoff"
 
+        service_name = constants.PEBBLE_SERVICE_NAMES[component]
+
         for attempt in Retrying(
             stop=stop_after_attempt(6), wait=wait_fixed(30), reraise=True
         ):
             with attempt:
                 if expected_state == "active":
                     assert pebble_service_is_running(
-                        juju, f"{app}/0", component, constants.PEBBLE_SERVICE_NAME
+                        juju, f"{app}/0", component, service_name
                     ), (
-                        f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not active while waiting."
+                        f"{app}: pebble service '{service_name}' not active while waiting."
                     )
                 else:
                     current = get_pebble_service_status(
-                        juju, component, f"{app}/0", constants.PEBBLE_SERVICE_NAME
+                        juju, component, f"{app}/0", service_name
                     )["current"]
                     assert current == "backoff", (
-                        f"{app}: pebble service '{constants.PEBBLE_SERVICE_NAME}' not in backoff while waiting."
+                        f"{app}: pebble service '{service_name}' not in backoff while waiting."
                     )
     juju.integrate(
         f"{constants.PGBOUNCER_APP}:database",

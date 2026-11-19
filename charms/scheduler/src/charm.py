@@ -62,6 +62,11 @@ class AirflowSchedulerCharm(ops.CharmBase):
         """Return the service Pebble layer."""
         layer: LayerDict = {
             "services": {
+                constants.ROCK_SERVICE_NAME: {
+                    "override": "replace",
+                    "command": "true",
+                    "startup": "disabled",
+                },
                 constants.SERVICE_NAME: {
                     "override": "replace",
                     "summary": "The airflow scheduler service.",
@@ -69,7 +74,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
                     "startup": "enabled",
                     "user": constants.WORKLOAD_USER,
                     "group": constants.WORKLOAD_GROUP,
-                }
+                },
             }
         }
         return layer
