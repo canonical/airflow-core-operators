@@ -36,11 +36,9 @@ class PebbleServiceSecurityLogger:
         self,
         container: ops.model.Container,
         appid: str,
-        component: str,
         service_name: str,
     ) -> None:
         self._container = container
-        self._component = component
         self._service_name = service_name
         self._context_logger = _ContextLogger(
             logging.getLogger(__name__),

@@ -13,6 +13,19 @@ import constants
 from security_logging import PebbleServiceSecurityLogger
 
 
+def _security_logger(is_running=True, current=ops.pebble.ServiceStatus.ACTIVE):
+    service = Mock()
+    service.is_running.return_value = is_running
+    service.current = current
+    container = Mock()
+    container.get_services.return_value = UserDict({constants.SERVICE_NAME: service})
+    return PebbleServiceSecurityLogger(
+        container=container,
+        appid=constants.APP_ID,
+        service_name=constants.SERVICE_NAME,
+    )
+
+
 @pytest.mark.parametrize(
     ("method_name", "args", "event_name"),
     [
@@ -23,58 +36,55 @@ from security_logging import PebbleServiceSecurityLogger
     ],
 )
 def test_emits_system_event_json(caplog, method_name, args, event_name):
-    service = Mock()
-    service.is_running.return_value = True
-    service.current = ops.pebble.ServiceStatus.ERROR
-    container = Mock()
-    container.get_services.return_value = UserDict({"api-server": service})
-    security_logger = PebbleServiceSecurityLogger(
-        container=container,
-        appid=constants.APP_ID,
-        component="api-server",
-        service_name="api-server",
-    )
+    security_logger = _security_logger(current=ops.pebble.ServiceStatus.ERROR)
 
-    with caplog.at_level(
-        logging.WARNING,
-        logger="security_logging",
-    ):
+    with caplog.at_level(logging.WARNING, logger="security_logging"):
         getattr(security_logger, method_name)(*args)
 
-    record = next(
-        record
-        for record in caplog.records
-        if record.name == "security_logging"
-    )
+    record = next(record for record in caplog.records if record.name == "security_logging")
     event = json.loads(record.getMessage())["owasp_event"]
     datetime.fromisoformat(event["datetime"])
-    assert event["appid"] == "airflow.api-server"
+    assert event["appid"] == constants.APP_ID
     assert event["type"] == "security"
     assert event["event"] == event_name
     assert event["level"] == "WARN"
     assert event["actor"]
-    assert event["target"] == "api-server"
+    assert event["target"] == constants.SERVICE_NAME
     assert "action" not in event
     assert "outcome" not in event
     assert event["data"]
 
 
-def test_startup_is_not_logged_without_a_state_transition(caplog):
-    service = Mock()
-    service.is_running.return_value = True
-    container = Mock()
-    container.get_services.return_value = UserDict({"api-server": service})
-    security_logger = PebbleServiceSecurityLogger(
-        container=container,
-        appid=constants.APP_ID,
-        component="api-server",
-        service_name="api-server",
-    )
+@pytest.mark.parametrize(
+    ("method_name", "args", "is_running", "current"),
+    [
+        pytest.param(
+            "log_startup_if_transitioned",
+            (True,),
+            True,
+            ops.pebble.ServiceStatus.ACTIVE,
+            id="startup-when-already-running",
+        ),
+        pytest.param(
+            "log_shutdown_if_running",
+            (False, "relation_removed"),
+            False,
+            ops.pebble.ServiceStatus.INACTIVE,
+            id="shutdown-when-not-running",
+        ),
+        pytest.param(
+            "log_crash_if_error",
+            (),
+            False,
+            ops.pebble.ServiceStatus.INACTIVE,
+            id="crash-when-not-in-error",
+        ),
+    ],
+)
+def test_no_event_without_matching_state(caplog, method_name, args, is_running, current):
+    security_logger = _security_logger(is_running=is_running, current=current)
 
-    with caplog.at_level(
-        logging.WARNING,
-        logger="security_logging",
-    ):
-        security_logger.log_startup_if_transitioned(was_running=True)
+    with caplog.at_level(logging.WARNING, logger="security_logging"):
+        getattr(security_logger, method_name)(*args)
 
     assert not caplog.records

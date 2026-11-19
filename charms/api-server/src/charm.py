@@ -46,7 +46,6 @@ class AirflowApiServerCharm(ops.CharmBase):
         self._security_events = PebbleServiceSecurityLogger(
             container=self._container,
             appid=constants.APP_ID,
-            component=constants.AIRFLOW_COMPONENT,
             service_name=constants.SERVICE_NAME,
         )
         self._config_requires = AirflowCoordinatorCoreRequires(
@@ -192,6 +191,8 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Add the Pebble layer and replan the services.
 
         The service starts automatically after replanning as startup is enabled.
+        It is only restarted if it was already running, since a service that
+        replan just started has already picked up the new configuration.
 
         Raises:
             ExitWithStatusError: If replanning fails.
@@ -200,10 +201,8 @@ class AirflowApiServerCharm(ops.CharmBase):
         self._container.add_layer("api-server-base", self._api_server_layer, combine=True)
         try:
             self._container.replan()
-            if restart_service:
+            if restart_service and was_running:
                 self._container.restart(constants.SERVICE_NAME)
-
-            if restart_service:
                 self._security_events.log_restart("configuration_changed")
             else:
                 self._security_events.log_startup_if_transitioned(was_running)

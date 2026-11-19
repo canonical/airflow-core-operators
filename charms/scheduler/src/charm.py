@@ -45,7 +45,6 @@ class AirflowSchedulerCharm(ops.CharmBase):
         self._security_events = PebbleServiceSecurityLogger(
             container=self._container,
             appid=constants.APP_ID,
-            component=constants.AIRFLOW_COMPONENT,
             service_name=constants.SERVICE_NAME,
         )
 
@@ -217,6 +216,8 @@ class AirflowSchedulerCharm(ops.CharmBase):
         """Add the Pebble layer and replan.
 
         The service will start automatically since startup is enabled.
+        It is only restarted if it was already running, since a service that
+        replan just started has already picked up the new configuration.
 
         Raises:
             ExitWithStatusError: If the service cannot be replanned.
@@ -226,7 +227,7 @@ class AirflowSchedulerCharm(ops.CharmBase):
 
         try:
             self._container.replan()
-            if restart_service:
+            if restart_service and was_running:
                 self._container.restart(constants.SERVICE_NAME)
                 self._security_events.log_restart("configuration_changed")
             else:
