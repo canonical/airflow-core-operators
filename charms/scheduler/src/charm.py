@@ -4,6 +4,7 @@
 
 """Charm of the Airflow scheduler workload."""
 
+import hashlib
 import logging
 
 import ops
@@ -51,9 +52,78 @@ class AirflowSchedulerCharm(ops.CharmBase):
             callback=self._reconcile,
         )
 
+    def _log_targets_config(self) -> dict[str, ops.pebble.LogTargetDict]:
+        """Build the Pebble log-targets configuration for the current OTLP endpoint."""
+        otlp_endpoint = self._config_requires.otlp_endpoint
+        base_target_name = f"{constants.SERVICE_NAME}-logs"
+        existing_targets = self._container.get_plan().log_targets
+        log_targets: dict[str, ops.pebble.LogTargetDict] = {}
+
+        active_target_name: str | None = None
+        if otlp_endpoint:
+            base_existing = existing_targets.get(base_target_name)
+            if base_existing is None or base_existing.location == otlp_endpoint:
+                active_target_name = base_target_name
+            else:
+                suffix = hashlib.sha256(otlp_endpoint.encode()).hexdigest()[:8]
+                active_target_name = f"{base_target_name}-{suffix}"
+
+        for name, existing in existing_targets.items():
+            if name != active_target_name and (
+                name == base_target_name or name.startswith(f"{base_target_name}-")
+            ):
+                log_targets[name] = {
+                    "override": "replace",
+                    "type": existing.type,
+                    "location": existing.location,
+                    "services": [],
+                }
+
+        if otlp_endpoint and active_target_name:
+            log_targets[active_target_name] = {
+                "override": "replace",
+                "type": "opentelemetry",
+                "location": otlp_endpoint,
+                "services": [constants.SERVICE_NAME],
+                "labels": {
+                    "juju_model": self.model.name,
+                    "juju_model_uuid": self.model.uuid,
+                    "juju_application": self.app.name,
+                    "juju_charm": self.meta.name,
+                    "juju_unit": self.unit.name,
+                    "loki.resource.labels": (
+                        "juju_application, juju_charm, juju_model, juju_model_uuid, juju_unit"
+                    ),
+                },
+            }
+
+        return log_targets
+
+    def _otel_resource_attributes(self) -> str:
+        """Build the OTEL_RESOURCE_ATTRIBUTES value with Juju topology and instance ID."""
+        instance_id = f"{self.model.name}_{self.model.uuid}_{self.app.name}_{self.unit.name}"
+        return (
+            f"juju_application={self.app.name},"
+            f"juju_charm={self.meta.name},"
+            f"juju_model={self.model.name},"
+            f"juju_model_uuid={self.model.uuid},"
+            f"juju_unit={self.unit.name},"
+            f"service.instance.id={instance_id}"
+        )
+
     @property
     def _airflow_scheduler_layer(self) -> LayerDict:
         """Return the service Pebble layer."""
+        service: ops.pebble.ServiceDict = {
+            "override": "replace",
+            "summary": "The airflow scheduler service.",
+            "command": "airflow scheduler",
+            "startup": "enabled",
+            "user": constants.WORKLOAD_USER,
+            "group": constants.WORKLOAD_GROUP,
+        }
+        if self._config_requires.otlp_endpoint:
+            service["environment"] = {"OTEL_RESOURCE_ATTRIBUTES": self._otel_resource_attributes()}
         layer: LayerDict = {
             "services": {
                 constants.ROCK_SERVICE_NAME: {
@@ -61,16 +131,11 @@ class AirflowSchedulerCharm(ops.CharmBase):
                     "command": "true",
                     "startup": "disabled",
                 },
-                constants.SERVICE_NAME: {
-                    "override": "replace",
-                    "summary": "The airflow scheduler service.",
-                    "command": "airflow scheduler",
-                    "startup": "enabled",
-                    "user": constants.WORKLOAD_USER,
-                    "group": constants.WORKLOAD_GROUP,
-                },
-            }
+                constants.SERVICE_NAME: service,
+            },
         }
+        if log_targets := self._log_targets_config():
+            layer["log-targets"] = log_targets
         return layer
 
     def _stop_service(self) -> None:
