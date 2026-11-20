@@ -46,8 +46,11 @@ class PebbleServiceSecurityLogger:
         )
         self._owasp_logger = OWASPLogger(appid=appid, logger=self._context_logger)
 
-    def is_running(self) -> bool | None:
-        """Return the service state, or None when Pebble cannot be queried."""
+    def is_running(self) -> bool:
+        """Return True if Pebble reports the service as running.
+
+        Returns False if the service is not defined or Pebble cannot be queried.
+        """
         service = self._get_service_info()
         return bool(service and service.is_running())
 
