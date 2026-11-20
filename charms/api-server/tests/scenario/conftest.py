@@ -1,6 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import dataclasses
 import json
 import logging
 
@@ -23,6 +24,23 @@ def airflow_api_server_charm():
 def container():
     """Fixture to create a mock container."""
     return ops.testing.Container(name="airflow-api-server", can_connect=True)
+
+
+@pytest.fixture(scope="function")
+def container_with_layer(container):
+    """Fixture for a mock container with the api-server Pebble layer already present."""
+    existing_layer = ops.pebble.Layer(
+        {
+            "services": {
+                "airflow-api-server": {
+                    "override": "replace",
+                    "command": "airflow api-server",
+                    "startup": "enabled",
+                }
+            }
+        }
+    )
+    return dataclasses.replace(container, layers={"api-server-base": existing_layer})
 
 
 @pytest.fixture(scope="function")

@@ -21,6 +21,28 @@ from tests.integration.helpers.airflow_helpers import read_airflow_config
 import tests.integration.helpers.constants as constants
 
 
+def test_core_charms_blocked_without_coordinator_relation(
+    juju: jubilant.Juju,
+    core_charms: dict,
+):
+    """Freshly deployed core charms should block with 'Missing airflow-coordinator relation'."""
+    for component, app in constants.CORE_CHARMS.items():
+        juju.deploy(
+            core_charms[app], resources=constants.CORE_CHARMS_RESOURCES[component]
+        )
+
+    juju.wait(
+        lambda status: all(
+            status.apps[app].is_blocked
+            and status.apps[app].app_status.message
+            == "Missing airflow-coordinator relation"
+            for app in constants.CORE_APPS
+        ),
+        error=lambda status: jubilant.any_error(status, *constants.CORE_APPS),
+        timeout=35 * 60,
+    )
+
+
 @pytest.mark.parametrize("component, app", list(constants.CORE_CHARMS.items()))
 def test_pebble_services_and_config_exist(
     juju: jubilant.Juju,

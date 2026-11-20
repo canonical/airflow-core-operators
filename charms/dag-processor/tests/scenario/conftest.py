@@ -1,6 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import dataclasses
 import logging
 
 import ops.testing
@@ -22,6 +23,23 @@ def airflow_dag_processor_charm():
 def container():
     """Fixture to create a mock container."""
     return ops.testing.Container(name="airflow-dag-processor", can_connect=True)
+
+
+@pytest.fixture(scope="function")
+def container_with_layer(container):
+    """Fixture for a mock container with the dag-processor Pebble layer already present."""
+    existing_layer = ops.pebble.Layer(
+        {
+            "services": {
+                "airflow-dag-processor": {
+                    "override": "replace",
+                    "command": "airflow dag-processor",
+                    "startup": "enabled",
+                }
+            }
+        }
+    )
+    return dataclasses.replace(container, layers={"dag-processor-base": existing_layer})
 
 
 @pytest.fixture(scope="function")
