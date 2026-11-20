@@ -5,7 +5,12 @@ set fallback
 default:
 	just --list
 
-pack-charms: clean-core-charms
+sync-security-logging:
+	cp charms/api-server/src/security_logging.py charms/scheduler/src/security_logging.py
+	cp charms/api-server/src/security_logging.py charms/dag-processor/src/security_logging.py
+	cp charms/api-server/src/security_logging.py charms/triggerer/src/security_logging.py
+
+pack-charms: sync-security-logging clean-core-charms
 	#!/usr/bin/bash
 	for charm_dir in charms/*/; do
 		if [ -f "$charm_dir/charmcraft.yaml" ]; then
@@ -36,7 +41,7 @@ clean: clean-core-charms
 	#!/usr/bin/bash
 	juju destroy-model --force --destroy-storage --no-prompt "${JUJU_MODEL:-test}" || true
 
-lint:
+lint: sync-security-logging
 	#!/usr/bin/bash
 	set -eux
 
@@ -47,10 +52,10 @@ lint:
 
 	for charm in "${charms[@]}"; do
 		uv sync --frozen --group lint
-		cd ./charms/$charm && uv run tox -e lint && cd -
+		cd ./charms/$charm && uv tool run --from 'tox>=4,<5' tox -e lint && cd -
 	done
 
-format:
+format: sync-security-logging
 	#!/usr/bin/bash
 	set -eux
 
@@ -61,18 +66,18 @@ format:
 
 	for charm in "${charms[@]}"; do
 		uv sync --frozen --group format
-		cd ./charms/$charm && uv run tox -e format && cd -
+		cd ./charms/$charm && uv tool run --from 'tox>=4,<5' tox -e format && cd -
 	done
 
 # Run unit tests for all core charms
-unit:
+unit: sync-security-logging
 	#!/usr/bin/bash
 	set -eux
 
 	charms=("api-server" "dag-processor" "scheduler" "triggerer")
 
 	for charm in "${charms[@]}"; do
-		cd ./charms/$charm && uv run tox -e unit && cd -
+		cd ./charms/$charm && uv tool run --from 'tox>=4,<5' tox -e unit && cd -
 	done
 
 get-system-state:

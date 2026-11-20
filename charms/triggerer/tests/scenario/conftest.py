@@ -6,11 +6,13 @@ import logging
 import ops.testing
 import pytest
 
+import constants
 from charm import AirflowTriggererCharm
 
 logger = logging.getLogger(__name__)
 
 AIRFLOW_VERSION = "3.1.0"
+LAYER_NAME = "triggerer-base"
 
 
 @pytest.fixture
@@ -22,6 +24,29 @@ def airflow_triggerer_charm():
 def container():
     """Fixture to create a mock container."""
     return ops.testing.Container(name="airflow-triggerer", can_connect=True)
+
+
+@pytest.fixture(scope="function")
+def running_container():
+    """Container whose service is already defined and running in Pebble."""
+    return ops.testing.Container(
+        name="airflow-triggerer",
+        can_connect=True,
+        layers={
+            LAYER_NAME: ops.pebble.Layer(
+                {
+                    "services": {
+                        constants.SERVICE_NAME: {
+                            "override": "replace",
+                            "command": "airflow triggerer",
+                            "startup": "enabled",
+                        }
+                    }
+                }
+            )
+        },
+        service_statuses={constants.SERVICE_NAME: ops.pebble.ServiceStatus.ACTIVE},
+    )
 
 
 @pytest.fixture(scope="function")

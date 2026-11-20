@@ -13,6 +13,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "jinja2" },
     { name = "ops" },
+    { name = "owasp-logger" },
     { name = "pydantic" },
 ]
 
@@ -37,6 +38,7 @@ unit = [
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "ops", specifier = ">=3,<4" },
+    { name = "owasp-logger", specifier = ">=0.1.6,<0.2.0" },
     { name = "pydantic", specifier = ">=1.0" },
 ]
 
@@ -158,7 +160,7 @@ name = "exceptiongroup"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749, upload-time = "2025-05-10T17:42:51.123Z" }
 wheels = [
@@ -348,6 +350,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/10/23/3737c3a76bd3129eb571538d22e81f58727c0670b6cba24febd4ccdeb2f0/ops_scenario-8.0.0.tar.gz", hash = "sha256:b358228f3c88ab36f93c467e926c2ef20f16a99578a490a9fd9733eb1eab175c", size = 109454, upload-time = "2025-07-02T10:40:32.623Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/17/c7/78f623df92e3c6220eb8dd963f7fbb3df69934c74aa073deb7c77d4407e3/ops_scenario-8.0.0-py3-none-any.whl", hash = "sha256:5d52e7162cc7cb2a26c8fd62df3f3fb88668a407af4024c1be6003959c80e2de", size = 64300, upload-time = "2025-07-02T10:40:31.002Z" },
+]
+
+[[package]]
+name = "owasp-logger"
+version = "0.1.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0e/5f/2bb17ea9e733c7429fcb65d4f1fd3e96387aab1d9cb1f0ecb6ecf7c0228c/owasp_logger-0.1.6.tar.gz", hash = "sha256:0e9d9f2f49da149babf5dcfad65eb13ab5b7f780b3228fca2856401f39ed979d", size = 74247, upload-time = "2026-04-01T14:04:54.188Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/ce/dbd340b01c6cde5f9bdfa7c572db629e5d500a8d003b522cf14c8725f0bd/owasp_logger-0.1.6-py3-none-any.whl", hash = "sha256:8ed80527f6f6c4cc86a72ec1ef399ed7ae1eca3f491b471abd1d308fa5f74129", size = 10914, upload-time = "2026-04-01T14:04:53.146Z" },
 ]
 
 [[package]]

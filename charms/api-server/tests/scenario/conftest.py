@@ -7,11 +7,13 @@ import logging
 import ops.testing
 import pytest
 
+import constants
 from charm import AirflowApiServerCharm
 
 logger = logging.getLogger(__name__)
 
 AIRFLOW_VERSION = "3.1.0"
+LAYER_NAME = "api-server-base"
 
 
 @pytest.fixture
@@ -23,6 +25,29 @@ def airflow_api_server_charm():
 def container():
     """Fixture to create a mock container."""
     return ops.testing.Container(name="airflow-api-server", can_connect=True)
+
+
+@pytest.fixture(scope="function")
+def running_container():
+    """Container whose service is already defined and running in Pebble."""
+    return ops.testing.Container(
+        name="airflow-api-server",
+        can_connect=True,
+        layers={
+            LAYER_NAME: ops.pebble.Layer(
+                {
+                    "services": {
+                        constants.SERVICE_NAME: {
+                            "override": "replace",
+                            "command": "airflow api-server",
+                            "startup": "enabled",
+                        }
+                    }
+                }
+            )
+        },
+        service_statuses={constants.SERVICE_NAME: ops.pebble.ServiceStatus.ACTIVE},
+    )
 
 
 @pytest.fixture(scope="function")

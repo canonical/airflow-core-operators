@@ -7,6 +7,7 @@ import constants
 from charm import AirflowSchedulerCharm
 
 AIRFLOW_VERSION = "3.1.0"
+LAYER_NAME = "scheduler-base"
 logger = logging.getLogger(__name__)
 
 
@@ -19,6 +20,29 @@ def airflow_scheduler_charm():
 def container():
     """Fixture to create a mock container."""
     return ops.testing.Container(name=constants.CONTAINER_NAME, can_connect=True)
+
+
+@pytest.fixture
+def running_container():
+    """Container whose service is already defined and running in Pebble."""
+    return ops.testing.Container(
+        name=constants.CONTAINER_NAME,
+        can_connect=True,
+        layers={
+            LAYER_NAME: ops.pebble.Layer(
+                {
+                    "services": {
+                        constants.SERVICE_NAME: {
+                            "override": "replace",
+                            "command": "airflow scheduler",
+                            "startup": "enabled",
+                        }
+                    }
+                }
+            )
+        },
+        service_statuses={constants.SERVICE_NAME: ops.pebble.ServiceStatus.ACTIVE},
+    )
 
 
 @pytest.fixture

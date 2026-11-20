@@ -2,6 +2,7 @@
 
 AIRFLOW_HOME = "/opt/airflow"
 AIRFLOW_COMPONENT = "scheduler"
+APP_ID = "airflow.scheduler"
 AIRFLOW_CONFIG_PATH = f"{AIRFLOW_HOME}/airflow.cfg"
 AIRFLOW_COORDINATOR_RELATION_NAME = "airflow-coordinator"
 CONTAINER_NAME = "airflow-scheduler"
