@@ -62,9 +62,9 @@ class PebbleServiceSecurityLogger:
             return None
         return services.get(self._service_name)
 
-    def log_startup_if_transitioned(self, was_running: bool | None) -> None:
+    def log_startup_if_transitioned(self, was_running: bool) -> None:
         """Log startup only when a stopped service becomes running."""
-        if was_running is False and self.is_running() is True:
+        if not was_running and self.is_running():
             self._emit(
                 "sys_startup",
                 "pebble",
@@ -73,7 +73,7 @@ class PebbleServiceSecurityLogger:
                 trigger="pebble_replan",
             )
 
-    def log_shutdown_if_running(self, was_running: bool | None, trigger: str) -> None:
+    def log_shutdown_if_running(self, was_running: bool, trigger: str) -> None:
         """Log a successful charm-requested stop of a running service."""
         if was_running:
             self._emit(
