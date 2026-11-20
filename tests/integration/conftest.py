@@ -89,6 +89,19 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
             core_charms[app], resources=constants.CORE_CHARMS_RESOURCES[component]
         )
 
+    # Verify all core charms block with "Missing airflow-coordinator relation" on fresh deploy
+    # before the coordinator relation is added.
+    juju.wait(
+        lambda status: all(
+            status.apps[app].is_blocked
+            and status.apps[app].app_status.message
+            == "Missing airflow-coordinator relation"
+            for app in constants.CORE_APPS
+        ),
+        error=jubilant.any_error,
+        timeout=35 * 60,
+    )
+
     juju.integrate(
         f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database"
     )
