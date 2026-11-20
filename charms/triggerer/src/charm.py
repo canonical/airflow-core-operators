@@ -48,8 +48,9 @@ class AirflowTriggererCharm(ops.CharmBase):
 
     def _stop_service_and_remove_config(self) -> None:
         try:
-            logger.info(f"Stopping service {constants.SERVICE_NAME}")
-            self._container.stop(constants.SERVICE_NAME)
+            if constants.SERVICE_NAME in self._container.get_plan().services:
+                logger.info(f"Stopping service {constants.SERVICE_NAME}")
+                self._container.stop(constants.SERVICE_NAME)
         except ops.pebble.APIError:
             raise ExitWithStatusError(
                 "Failed to stop service",
