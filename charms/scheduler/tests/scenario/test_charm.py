@@ -26,17 +26,30 @@ def test_missing_relation_status_scenario(context, state, container):
     """Test the 'Missing relation' block when NOT integrated."""
     state_in = dataclasses.replace(state, relations=[])
     with (
-        unittest.mock.patch("ops.model.Container.stop", autospec=True),
+        unittest.mock.patch("ops.model.Container.stop", autospec=True) as stop_mock,
         unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=False),
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
+    stop_mock.assert_not_called()
     assert state_out.unit_status == ops.BlockedStatus("Missing airflow-coordinator relation")
 
 
 def test_missing_relation_with_cleanup_scenario(context, state, container):
     """Test cleanup happens when relation is missing and config exists."""
-    state_in = dataclasses.replace(state, relations=[])
+    existing_layer = ops.pebble.Layer(
+        {
+            "services": {
+                "airflow-scheduler": {
+                    "override": "replace",
+                    "command": "airflow scheduler",
+                    "startup": "enabled",
+                }
+            }
+        }
+    )
+    container = dataclasses.replace(container, layers={"scheduler-base": existing_layer})
+    state_in = dataclasses.replace(state, relations=[], containers=[container])
     with (
         unittest.mock.patch("ops.model.Container.stop", autospec=True) as stop_mock,
         unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=True),
@@ -437,7 +450,19 @@ def test_pod_spec_write_generic_error_scenario(context, state, container, schedu
 
 def test_stop_service_pebble_api_error_scenario(context, state, container):
     """Test BlockedStatus when stopping service fails with Pebble API error."""
-    state_in = dataclasses.replace(state, relations=[])
+    existing_layer = ops.pebble.Layer(
+        {
+            "services": {
+                "airflow-scheduler": {
+                    "override": "replace",
+                    "command": "airflow scheduler",
+                    "startup": "enabled",
+                }
+            }
+        }
+    )
+    container = dataclasses.replace(container, layers={"scheduler-base": existing_layer})
+    state_in = dataclasses.replace(state, relations=[], containers=[container])
     with (
         unittest.mock.patch(
             "ops.model.Container.stop",

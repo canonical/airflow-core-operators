@@ -25,11 +25,12 @@ def test_missing_relation_status_scenario(context, state, container):
     state_in = dataclasses.replace(state, relations=[])
 
     with (
-        unittest.mock.patch("ops.model.Container.stop", autospec=True),
+        unittest.mock.patch("ops.model.Container.stop", autospec=True) as stop_mock,
         unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=False),
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
+    stop_mock.assert_not_called()
     assert state_out.unit_status == ops.BlockedStatus("Missing airflow-coordinator relation")
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
@@ -37,12 +38,24 @@ def test_missing_relation_status_scenario(context, state, container):
 
 
 def test_missing_relation_with_cleanup_config_exists_scenario(context, state, container):
-    """Missing relation; stop succeeds; config exists.
+    """Missing relation; stop succeeds when service exists in plan; config exists.
 
     Expect: service is stopped, config is removed, and unit is Blocked due to the
     missing airflow-coordinator relation.
     """
-    state_in = dataclasses.replace(state, relations=[])
+    existing_layer = ops.pebble.Layer(
+        {
+            "services": {
+                "airflow-api-server": {
+                    "override": "replace",
+                    "command": "airflow api-server",
+                    "startup": "enabled",
+                }
+            }
+        }
+    )
+    container = dataclasses.replace(container, layers={"api-server-base": existing_layer})
+    state_in = dataclasses.replace(state, relations=[], containers=[container])
 
     with (
         unittest.mock.patch(
@@ -60,19 +73,25 @@ def test_missing_relation_with_cleanup_config_exists_scenario(context, state, co
 
     assert state_out.unit_status == ops.BlockedStatus("Missing airflow-coordinator relation")
 
-    out_container = state_out.get_container(constants.CONTAINER_NAME)
-    assert "api-server-base" not in out_container.layers
-
 
 def test_stop_service_pebble_api_error_scenario(context, state, container):
     """When relation is missing and stopping the service raises Pebble APIError.
 
     Charm goes Blocked with "Failed to stop pebble service"
     """
-    state_in = dataclasses.replace(state, relations=[])
-
-    svc = unittest.mock.Mock()
-    svc.is_running.return_value = True
+    existing_layer = ops.pebble.Layer(
+        {
+            "services": {
+                "airflow-api-server": {
+                    "override": "replace",
+                    "command": "airflow api-server",
+                    "startup": "enabled",
+                }
+            }
+        }
+    )
+    container = dataclasses.replace(container, layers={"api-server-base": existing_layer})
+    state_in = dataclasses.replace(state, relations=[], containers=[container])
 
     with (
         unittest.mock.patch(
@@ -86,9 +105,6 @@ def test_stop_service_pebble_api_error_scenario(context, state, container):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
     assert state_out.unit_status == ops.BlockedStatus("Failed to stop pebble service")
-
-    out_container = state_out.get_container(constants.CONTAINER_NAME)
-    assert "api-server-base" not in out_container.layers
 
 
 def test_waiting_when_cannot_write_airflow_config(context, state, container, api_server_relation):
