@@ -276,11 +276,15 @@ class AirflowApiServerCharm(ops.CharmBase):
             ExitWithStatusError: If replanning fails.
         """
         was_running = self._security_events.is_running()
+        plan_before = self._container.get_plan()
         self._container.add_layer("api-server-base", self._api_server_layer, combine=True)
+        plan_changed = self._container.get_plan().services != plan_before.services
         try:
             self._container.replan()
-            if restart_service and was_running:
+            if restart_service and was_running and not plan_changed:
                 self._container.restart(constants.SERVICE_NAME)
+                self._security_events.log_restart("configuration_changed")
+            elif plan_changed and was_running:
                 self._security_events.log_restart("configuration_changed")
             else:
                 self._security_events.log_startup_if_transitioned(was_running)
