@@ -84,10 +84,12 @@ def deployed_stack(juju: jubilant.Juju, core_charms: dict):
         channel=constants.COORDINATOR_CHANNEL,
     )
 
+    existing_apps = set(juju.status().apps)
     for component, app in constants.CORE_CHARMS.items():
-        juju.deploy(
-            core_charms[app], resources=constants.CORE_CHARMS_RESOURCES[component]
-        )
+        if app not in existing_apps:
+            juju.deploy(
+                core_charms[app], resources=constants.CORE_CHARMS_RESOURCES[component]
+            )
 
     juju.integrate(
         f"{constants.COORDINATOR_APP}:postgres", f"{constants.PGBOUNCER_APP}:database"

@@ -27,23 +27,24 @@ def test_missing_relation_status_scenario(context, state, container):
     """Test the 'Missing relation' block when NOT integrated."""
     state_in = dataclasses.replace(state, relations=[])
     with (
-        unittest.mock.patch("ops.model.Container.stop", autospec=True),
+        unittest.mock.patch("ops.model.Container.stop", autospec=True) as stop_mock,
         unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=False),
     ):
         state_out = context.run(context.on.pebble_ready(container), state_in)
 
+    stop_mock.assert_not_called()
     assert state_out.unit_status == ops.BlockedStatus("Missing airflow-coordinator relation")
 
 
-def test_missing_relation_with_cleanup_scenario(context, state, container):
+def test_missing_relation_with_cleanup_scenario(context, state, container_with_layer):
     """Test cleanup happens when relation is missing and config exists."""
-    state_in = dataclasses.replace(state, relations=[])
+    state_in = dataclasses.replace(state, relations=[], containers=[container_with_layer])
     with (
         unittest.mock.patch("ops.model.Container.stop", autospec=True) as stop_mock,
         unittest.mock.patch("ops.model.Container.exists", autospec=True, return_value=True),
         unittest.mock.patch("ops.model.Container.remove_path", autospec=True) as remove_mock,
     ):
-        state_out = context.run(context.on.pebble_ready(container), state_in)
+        state_out = context.run(context.on.pebble_ready(container_with_layer), state_in)
 
     # Verify service stop was called
     stop_mock.assert_called_once()
@@ -437,9 +438,9 @@ def test_pod_spec_write_generic_error_scenario(context, state, container, schedu
     )
 
 
-def test_stop_service_pebble_api_error_scenario(context, state, container):
+def test_stop_service_pebble_api_error_scenario(context, state, container_with_layer):
     """Test BlockedStatus when stopping service fails with Pebble API error."""
-    state_in = dataclasses.replace(state, relations=[])
+    state_in = dataclasses.replace(state, relations=[], containers=[container_with_layer])
     with (
         unittest.mock.patch(
             "ops.model.Container.stop",
@@ -449,7 +450,7 @@ def test_stop_service_pebble_api_error_scenario(context, state, container):
             ),
         ),
     ):
-        state_out = context.run(context.on.pebble_ready(container), state_in)
+        state_out = context.run(context.on.pebble_ready(container_with_layer), state_in)
 
     assert state_out.unit_status == ops.BlockedStatus("Failed to stop service: Pebble API error")
 
