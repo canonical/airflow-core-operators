@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 
 import ops.testing
@@ -20,6 +21,23 @@ def airflow_scheduler_charm():
 def container():
     """Fixture to create a mock container."""
     return ops.testing.Container(name=constants.CONTAINER_NAME, can_connect=True)
+
+
+@pytest.fixture
+def container_with_layer(container):
+    """Fixture for a mock container with the scheduler Pebble layer already present."""
+    existing_layer = ops.pebble.Layer(
+        {
+            "services": {
+                "airflow-scheduler": {
+                    "override": "replace",
+                    "command": "airflow scheduler",
+                    "startup": "enabled",
+                }
+            }
+        }
+    )
+    return dataclasses.replace(container, layers={"scheduler-base": existing_layer})
 
 
 @pytest.fixture

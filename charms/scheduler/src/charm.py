@@ -148,7 +148,9 @@ class AirflowSchedulerCharm(ops.CharmBase):
         """Stop the scheduler service (idempotent)."""
         try:
             was_running = self._security_events.is_running()
-            self._container.stop(constants.SERVICE_NAME)
+            if constants.SERVICE_NAME in self._container.get_plan().services:
+                logger.info(f"Stopping service {constants.SERVICE_NAME}")
+                self._container.stop(constants.SERVICE_NAME)
         except ops.pebble.APIError as e:
             raise ExitWithStatusError(
                 "Failed to stop service: Pebble API error",

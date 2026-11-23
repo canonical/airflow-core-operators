@@ -1,6 +1,7 @@
 # Copyright 2023 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import dataclasses
 import logging
 
 import ops.testing
@@ -24,6 +25,23 @@ def airflow_triggerer_charm():
 def container():
     """Fixture to create a mock container."""
     return ops.testing.Container(name="airflow-triggerer", can_connect=True)
+
+
+@pytest.fixture(scope="function")
+def container_with_layer(container):
+    """Fixture for a mock container with the triggerer Pebble layer already present."""
+    existing_layer = ops.pebble.Layer(
+        {
+            "services": {
+                "airflow-triggerer": {
+                    "override": "replace",
+                    "command": "airflow triggerer",
+                    "startup": "enabled",
+                }
+            }
+        }
+    )
+    return dataclasses.replace(container, layers={"triggerer-base": existing_layer})
 
 
 @pytest.fixture(scope="function")
