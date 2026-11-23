@@ -320,11 +320,40 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                         assert cfg.get(section, "otel_service") == app
                         assert cfg.get(section, "otel_ssl_active") == "False"
 
-        # Verify real Airflow metrics from the core charms reach the OTel collector.
-        metric_line_re = re.compile(
-            r"^otelcol_receiver_accepted_metric_points(?:\{([^}]*)\})?\s+([0-9.eE+-]+)$",
-            re.MULTILINE,
-        )
+                    plan = yaml.safe_load(
+                        juju.ssh(
+                            f"{app}/0",
+                            "pebble plan",
+                            container=constants.CONTAINER_NAMES[component],
+                        )
+                    )
+                    log_targets = plan.get("log-targets", {})
+                    assert target_name in log_targets
+                    target = log_targets[target_name]
+                    assert target["type"] == "opentelemetry"
+                    assert target["location"].startswith("http://otelcol.")
+                    assert target["services"] == [service_name]
+                    assert target["labels"]["juju_model"] == juju.model
+                    assert target["labels"]["juju_application"] == app
+                    assert target["labels"]["juju_charm"] == app
+                    assert target["labels"]["juju_unit"] == f"{app}/0"
+                    assert target["labels"].get("juju_model_uuid")
+                    assert target["labels"]["loki.resource.labels"] == (
+                        "juju_application, juju_charm, juju_model, juju_model_uuid, juju_unit"
+                    )
+                    service_env = plan["services"][service_name].get("environment", {})
+                    expected_instance_id = f"{juju.model}_{target['labels']['juju_model_uuid']}_{app}_{app}/0"
+                    assert service_env.get("OTEL_RESOURCE_ATTRIBUTES") == (
+                        f"juju_application={app},"
+                        f"juju_charm={app},"
+                        f"juju_model={juju.model},"
+                        f"juju_model_uuid={target['labels']['juju_model_uuid']},"
+                        f"juju_unit={app}/0,"
+                        f"service.instance.id={expected_instance_id}"
+                    )
+
+        _assert_all_charms_forward_logs(juju, "otelcol/0")
+
         for attempt in Retrying(
             stop=stop_after_attempt(12), wait=wait_fixed(10), reraise=True
         ):
