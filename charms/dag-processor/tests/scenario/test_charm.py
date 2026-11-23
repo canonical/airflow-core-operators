@@ -1,4 +1,5 @@
 import dataclasses
+import hashlib
 import json
 import logging
 import unittest.mock
@@ -261,6 +262,7 @@ def test_active_status_flow_scenario(context, state, container, dag_processor_re
     assert layer.services["airflow-dag-processor"].override == "replace"
     assert layer.services["airflow-dag-processor"].user == "ubuntu"
     assert layer.services["airflow-dag-processor"].group == "ubuntu"
+    assert not layer.log_targets
 
 
 def test_restart_when_existing_config_changes(
@@ -358,11 +360,177 @@ def test_otel_config_rendered_and_otlp_endpoint_exposed(context, state, containe
         state_out = manager.run()
         assert manager.charm._config_requires.otlp_endpoint == "http://1.2.3.4:4318"
         app_name = manager.charm.app.name
+        charm_name = manager.charm.meta.name
+        unit_name = manager.charm.unit.name
 
     assert state_out.unit_status == ops.ActiveStatus()
-    fs = state_out.get_container(constants.CONTAINER_NAME).get_filesystem(context)
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
+    fs = out_container.get_filesystem(context)
     written_cfg = (fs / constants.AIRFLOW_CONFIG_PATH.lstrip("/")).read_text()
     assert f"otel_service = {app_name}" in written_cfg
+
+    layer = out_container.layers["dag-processor-base"]
+    expected_instance_id = f"{state_out.model.name}_{state_out.model.uuid}_{app_name}_{unit_name}"
+    assert layer.services["airflow-dag-processor"].environment == {
+        "OTEL_RESOURCE_ATTRIBUTES": (
+            f"juju_application={app_name},"
+            f"juju_charm={charm_name},"
+            f"juju_model={state_out.model.name},"
+            f"juju_model_uuid={state_out.model.uuid},"
+            f"juju_unit={unit_name},"
+            f"service.instance.id={expected_instance_id}"
+        )
+    }
+    target_name = "airflow-dag-processor-logs"
+    assert target_name in layer.log_targets
+    target = layer.log_targets[target_name]
+    assert target.type == "opentelemetry"
+    assert target.location == "http://1.2.3.4:4318"
+    assert target.override == "replace"
+    assert target.services == ["airflow-dag-processor"]
+    assert target.labels == {
+        "juju_model": state_out.model.name,
+        "juju_model_uuid": state_out.model.uuid,
+        "juju_application": app_name,
+        "juju_charm": charm_name,
+        "juju_unit": unit_name,
+        "loki.resource.labels": (
+            "juju_application, juju_charm, juju_model, juju_model_uuid, juju_unit"
+        ),
+    }
+
+
+def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, container):
+    """Verify Pebble log-targets disable old targets and create new ones on rotation."""
+    secret = ops.testing.Secret(
+        {"sensitive-data": json.dumps({"secret": "s3cret"})},
+    )
+    config_template = "[core]\nfernet_key = {{ secret }}\n"
+    base_target = "airflow-dag-processor-logs"
+    existing_layer = ops.pebble.Layer(
+        {
+            "log-targets": {
+                base_target: {
+                    "override": "replace",
+                    "type": "opentelemetry",
+                    "location": "http://1.2.3.4:4318",
+                    "services": ["airflow-dag-processor"],
+                },
+                "other-custom-target": {
+                    "override": "replace",
+                    "type": "loki",
+                    "location": "http://loki:3100/loki/api/v1/push",
+                    "services": ["airflow-dag-processor"],
+                },
+            }
+        }
+    )
+    container_with_target = dataclasses.replace(container, layers={"other-layer": existing_layer})
+
+    # 1. Endpoint unset: existing target is disabled with services: []
+    relation_unset = ops.testing.Relation(
+        "airflow-coordinator",
+        remote_app_data={
+            "config-template": config_template,
+            "secret-sensitive-data": secret.id,
+        },
+    )
+    state_unset = dataclasses.replace(
+        state,
+        relations=[relation_unset],
+        secrets=[secret],
+        containers=[container_with_target],
+    )
+
+    with (
+        unittest.mock.patch("ops.model.Container.replan", autospec=True),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True),
+    ):
+        state_out = context.run(context.on.pebble_ready(container_with_target), state_unset)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    layer = state_out.get_container(constants.CONTAINER_NAME).layers["dag-processor-base"]
+    assert not layer.services["airflow-dag-processor"].environment
+    assert base_target in layer.log_targets
+    assert "other-custom-target" not in layer.log_targets
+    target = layer.log_targets[base_target]
+    assert target.override == "replace"
+    assert target.type == "opentelemetry"
+    assert target.location == "http://1.2.3.4:4318"
+    assert target.services == []
+    assert not target.labels
+
+    # 2. Endpoint rotated: old target remains disabled, new hashed target is active
+    new_endpoint = "http://5.6.7.8:4318"
+    relation_rotated = ops.testing.Relation(
+        "airflow-coordinator",
+        remote_app_data={
+            "config-template": config_template,
+            "secret-sensitive-data": secret.id,
+            "otlp-endpoint": new_endpoint,
+        },
+    )
+    state_rotated = dataclasses.replace(
+        state_out,
+        relations=[relation_rotated],
+        secrets=[secret],
+    )
+
+    with (
+        unittest.mock.patch("ops.model.Container.replan", autospec=True),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True),
+    ):
+        state_out_rotated = context.run(
+            context.on.pebble_ready(container_with_target), state_rotated
+        )
+
+    assert state_out_rotated.unit_status == ops.ActiveStatus()
+    rotated_layer = state_out_rotated.get_container(constants.CONTAINER_NAME).layers[
+        "dag-processor-base"
+    ]
+    assert rotated_layer.log_targets[base_target].services == []
+    suffix = hashlib.sha256(new_endpoint.encode()).hexdigest()[:8]
+    rotated_target_name = f"{base_target}-{suffix}"
+    assert rotated_target_name in rotated_layer.log_targets
+    rotated_target = rotated_layer.log_targets[rotated_target_name]
+    assert rotated_target.location == new_endpoint
+    assert rotated_target.services == ["airflow-dag-processor"]
+
+    # 3. Rotate back to original endpoint (A -> B -> A): base target is re-enabled, B disabled
+    container_after_b = dataclasses.replace(
+        container,
+        layers={"other-layer": existing_layer, "dag-processor-base": rotated_layer},
+    )
+    relation_back_to_a = ops.testing.Relation(
+        "airflow-coordinator",
+        remote_app_data={
+            "config-template": config_template,
+            "secret-sensitive-data": secret.id,
+            "otlp-endpoint": "http://1.2.3.4:4318",
+        },
+    )
+    state_back_to_a = dataclasses.replace(
+        state_out_rotated,
+        relations=[relation_back_to_a],
+        secrets=[secret],
+        containers=[container_after_b],
+    )
+
+    with (
+        unittest.mock.patch("ops.model.Container.replan", autospec=True),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True),
+    ):
+        state_out_a_again = context.run(
+            context.on.pebble_ready(container_after_b), state_back_to_a
+        )
+
+    assert state_out_a_again.unit_status == ops.ActiveStatus()
+    layer_a_again = state_out_a_again.get_container(constants.CONTAINER_NAME).layers[
+        "dag-processor-base"
+    ]
+    assert layer_a_again.log_targets[base_target].location == "http://1.2.3.4:4318"
+    assert layer_a_again.log_targets[base_target].services == ["airflow-dag-processor"]
+    assert layer_a_again.log_targets[rotated_target_name].services == []
 
 
 def _security_events(caplog):

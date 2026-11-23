@@ -2,6 +2,7 @@
 # See LICENSE file for licensing details.
 
 import dataclasses
+import hashlib
 import json
 import logging
 import unittest.mock
@@ -261,6 +262,7 @@ def test_active_status_flow_scenario(context, state, container, api_server_relat
     assert layer.services["airflow-api-server"].user == "ubuntu"
     assert layer.services["airflow-api-server"].group == "ubuntu"
     assert not layer.services["airflow-api-server"].environment
+    assert not layer.log_targets
 
 
 def test_restart_when_existing_config_changes(
@@ -358,9 +360,12 @@ def test_otel_config_rendered_and_otlp_endpoint_exposed(context, state, containe
         state_out = manager.run()
         assert manager.charm._config_requires.otlp_endpoint == "http://1.2.3.4:4318"
         app_name = manager.charm.app.name
+        charm_name = manager.charm.meta.name
+        unit_name = manager.charm.unit.name
 
     assert state_out.unit_status == ops.ActiveStatus()
-    fs = state_out.get_container(constants.CONTAINER_NAME).get_filesystem(context)
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
+    fs = out_container.get_filesystem(context)
     written_cfg = (fs / constants.AIRFLOW_CONFIG_PATH.lstrip("/")).read_text()
     assert f"otel_service = {app_name}" in written_cfg
 
