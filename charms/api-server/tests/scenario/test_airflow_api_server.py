@@ -16,6 +16,16 @@ import constants
 
 logger = logging.getLogger(__name__)
 
+PROVIDES_META = {
+    "name": "airflow-api-server",
+    "provides": {
+        constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT: {
+            "interface": "airflow_api_server",
+            "limit": 1,
+        },
+    },
+}
+
 
 class AirflowAPIServerMockCharm(ops.CharmBase):
     """Mock Airflow API Server charm."""
@@ -57,15 +67,7 @@ class AirflowAPIServerRequirerMockCharm(ops.CharmBase):
 def provides_application_context():
     return ops.testing.Context(
         charm_type=AirflowAPIServerMockCharm,
-        meta={
-            "name": "airflow-api-server",
-            "provides": {
-                constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT: {
-                    "interface": "airflow_api_server",
-                    "limit": 1,
-                },
-            },
-        },
+        meta=PROVIDES_META,
     )
 
 
@@ -168,6 +170,66 @@ class TestAirflowAPIServerProvides:
         )
 
 
+class AirflowAPIServerMockCharmWithIngress(AirflowAPIServerMockCharm):
+    """Mock Airflow API Server charm that also sets an ingress URL on start."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
+        self.framework.observe(self.on.start, self._on_start)
+
+    def _on_start(self, event: ops.StartEvent) -> None:
+        # Subdomain-style URL: the ingress lib normalises it to a trailing "/".
+        self.provides.set_ingress_url("https://example.com/")
+
+
+@pytest.fixture(scope="function")
+def provides_application_context_with_ingress():
+    return ops.testing.Context(
+        charm_type=AirflowAPIServerMockCharmWithIngress,
+        meta=PROVIDES_META,
+    )
+
+
+class TestAirflowAPIServerProvidesIngress:
+    def test_set_ingress_url(
+        self, provides_application_context_with_ingress, provides_application_state
+    ):
+        """Ensures ingress_url is written to the databag with trailing slash stripped."""
+        state_out = provides_application_context_with_ingress.run(
+            provides_application_context_with_ingress.on.start(), provides_application_state
+        )
+
+        assert state_out.unit_status == ops.ActiveStatus()
+        relation_data = state_out.get_relations(constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT)[
+            0
+        ].local_app_data
+        # Stored verbatim minus the trailing slash added in subdomain mode.
+        assert relation_data.get("ingress_url") == "https://example.com"
+        assert relation_data.get("host") == "test-host"
+        assert relation_data.get("port") == "test-port"
+
+    def test_set_ingress_url_non_leader_noop(
+        self, provides_application_context_with_ingress, provides_application_state
+    ):
+        """Confirms set_ingress_url no-ops if it is not the leader unit."""
+        provides_application_state = dataclasses.replace(provides_application_state, leader=False)
+
+        state_out = provides_application_context_with_ingress.run(
+            provides_application_context_with_ingress.on.start(), provides_application_state
+        )
+
+        assert state_out.unit_status == ops.ActiveStatus()
+        relation_data = state_out.get_relations(constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT)[
+            0
+        ].local_app_data
+        # The leader guard is shared across all setters, so an empty databag is
+        # a stronger signal that the no-op worked than checking ingress_url alone.
+        assert "ingress_url" not in relation_data
+        assert "host" not in relation_data
+        assert "port" not in relation_data
+
+
 class TestAirflowAPIServerRequires:
     def get_juju_log_line(self, log_level: str, event: ops.EventBase):
         """Composes specific expected logs from mock charms."""
@@ -257,3 +319,47 @@ class TestAirflowAPIServerRequires:
             assert state_out.unit_status == ops.ActiveStatus()
             assert manager.charm.requires.api_server_host is None
             assert manager.charm.requires.api_server_port is None
+
+    def test_ingress_url_access(
+        self,
+        requires_application_context,
+        requires_application_state,
+    ):
+        """Confirms proper ingress_url access on the requirer side."""
+        airflow_api_server_requires_relation = ops.testing.Relation(
+            constants.AIRFLOW_API_SERVER_RELATION_ENDPOINT,
+            interface="airflow_api_server",
+            remote_app_data={
+                "host": "test-receiving-host",
+                "port": "test-receiving-port",
+                "ingress_url": "https://example.com/airflow",
+            },
+        )
+        updated_state = dataclasses.replace(
+            requires_application_state, relations=[airflow_api_server_requires_relation]
+        )
+
+        with requires_application_context(
+            requires_application_context.on.relation_changed(airflow_api_server_requires_relation),
+            updated_state,
+        ) as manager:
+            state_out = manager.run()
+
+            assert state_out.unit_status == ops.ActiveStatus()
+            assert manager.charm.requires.api_server_ingress_url == "https://example.com/airflow"
+
+    def test_ingress_url_missing(
+        self,
+        requires_application_context,
+        requires_application_state,
+        airflow_api_server_requires_relation,
+    ):
+        """Confirms ingress_url returns None when not set."""
+        with requires_application_context(
+            requires_application_context.on.relation_changed(airflow_api_server_requires_relation),
+            requires_application_state,
+        ) as manager:
+            state_out = manager.run()
+
+            assert state_out.unit_status == ops.ActiveStatus()
+            assert manager.charm.requires.api_server_ingress_url is None
