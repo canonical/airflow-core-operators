@@ -1,6 +1,7 @@
 """Shared constants for the Airflow API Server charm."""
 
-SERVICE_NAME = "airflow"
+ROCK_SERVICE_NAME = "airflow"
+SERVICE_NAME = "airflow-api-server"
 CONTAINER_NAME = "airflow-api-server"
 AIRFLOW_COMPONENT = "api-server"
 
