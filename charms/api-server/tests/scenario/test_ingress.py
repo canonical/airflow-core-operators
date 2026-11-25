@@ -172,8 +172,16 @@ def test_non_leader_does_not_set_ingress_path(context, state, container, api_ser
     assert "ingress_path" not in api_server_provides_out.local_app_data
 
 
-def test_restart_when_ingress_layer_changes(context, state, container, api_server_relation):
-    """Service is restarted after the pebble layer changes with proxy-headers + env var."""
+def test_no_explicit_restart_when_pebble_plan_changes(
+    context, state, running_container, api_server_relation
+):
+    """When the Pebble plan changes, replan restarts the service, so the charm
+    must not also call restart() explicitly, even when a config file changed too.
+
+    This guards against a double restart: replan already restarts services whose
+    plan definition changed, so an explicit restart is only needed when the
+    config changed without a Pebble plan change.
+    """
     ingress_rel = ingress_relation_with_url("http://traefik:8080/test-airflow-api-server-k8s")
     api_server_provides_rel = ops.testing.Relation(
         "airflow-api-server",
@@ -183,7 +191,7 @@ def test_restart_when_ingress_layer_changes(context, state, container, api_serve
         state,
         leader=True,
         relations=[api_server_relation, ingress_rel, api_server_provides_rel],
-        containers=[container],
+        containers=[running_container],
     )
 
     mock_can_write, mock_needs_update, mock_write = _mock_coordinator_config()
@@ -197,10 +205,10 @@ def test_restart_when_ingress_layer_changes(context, state, container, api_serve
         mock_write,
         unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock,
     ):
-        state_out = context.run(context.on.pebble_ready(container), state_in)
+        state_out = context.run(context.on.pebble_ready(running_container), state_in)
 
     assert state_out.unit_status == ops.ActiveStatus()
-    restart_mock.assert_called_once()
+    restart_mock.assert_not_called()
 
     out_container = state_out.get_container(constants.CONTAINER_NAME)
     layer = out_container.layers["api-server-base"]

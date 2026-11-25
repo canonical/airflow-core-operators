@@ -16,6 +16,7 @@ from charms.traefik_k8s.v2.ingress import (
 )
 
 import constants
+from security_logging import PebbleServiceSecurityLogger
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,11 @@ class AirflowApiServerCharm(ops.CharmBase):
         self.framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
 
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
+        self._security_events = PebbleServiceSecurityLogger(
+            container=self._container,
+            appid=constants.APP_ID,
+            service_name=constants.SERVICE_NAME,
+        )
         self._config_requires = AirflowCoordinatorCoreRequires(
             charm=self,
             relation_name=constants.AIRFLOW_COORDINATOR_RELATION_ENDPOINT,
@@ -80,6 +86,7 @@ class AirflowApiServerCharm(ops.CharmBase):
 
     def _stop_service_and_remove_config(self) -> None:
         try:
+            was_running = self._security_events.is_running()
             if constants.SERVICE_NAME in self._container.get_plan().services:
                 logger.info(f"Stopping service {constants.SERVICE_NAME}")
                 self._container.stop(constants.SERVICE_NAME)
@@ -88,6 +95,8 @@ class AirflowApiServerCharm(ops.CharmBase):
                 "Failed to stop pebble service",
                 ops.BlockedStatus,
             )
+        logger.info("Stopped service %s", constants.SERVICE_NAME)
+        self._security_events.log_shutdown_if_running(was_running, "required_relation_missing")
         config_path = constants.AIRFLOW_CONFIG_PATH
         if self._container.exists(config_path):
             self._container.remove_path(config_path, recursive=False)
@@ -264,23 +273,35 @@ class AirflowApiServerCharm(ops.CharmBase):
         """Add the Pebble layer and replan the services.
 
         The service starts automatically after replanning as startup is enabled.
+        It is only restarted if it was already running, since a service that
+        replan just started has already picked up the new configuration.
 
         Raises:
             ExitWithStatusError: If replanning fails.
         """
+        was_running = self._security_events.is_running()
+        plan_before = self._container.get_plan()
         self._container.add_layer("api-server-base", self._api_server_layer, combine=True)
+        plan_changed = self._container.get_plan().services != plan_before.services
         try:
             self._container.replan()
-            if restart_service:
+            if restart_service and was_running and not plan_changed:
                 self._container.restart(constants.SERVICE_NAME)
+                self._security_events.log_restart("configuration_changed")
+            elif plan_changed and was_running:
+                self._security_events.log_restart("configuration_changed")
+            else:
+                self._security_events.log_startup_if_transitioned(was_running)
 
         except ops.pebble.ChangeError as e:
+            self._security_events.log_crash_if_error()
             logger.exception("Pebble replan failed for api-server service: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
             )
         except ops.pebble.APIError as e:
+            self._security_events.log_crash_if_error()
             logger.exception("Pebble restart failed for api-server service: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",

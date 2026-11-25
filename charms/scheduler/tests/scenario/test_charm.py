@@ -4,6 +4,7 @@
 import dataclasses
 import hashlib
 import json
+import logging
 import unittest.mock
 
 import ops
@@ -206,10 +207,15 @@ def test_active_status_flow_scenario(context, state, container, scheduler_relati
     assert not plan.log_targets
 
 
-def test_restart_when_existing_config_changes(context, state, container, scheduler_relation):
-    """Restart service when existing config content changes."""
-    state_in = dataclasses.replace(state, relations=[scheduler_relation])
+def test_restart_when_existing_config_changes(
+    context, state, running_container, scheduler_relation, caplog
+):
+    """Restart an already running service, and log it, when its config changes."""
+    state_in = dataclasses.replace(
+        state, relations=[scheduler_relation], containers=[running_container]
+    )
     with (
+        caplog.at_level(logging.WARNING, logger="security_logging"),
         unittest.mock.patch.object(
             AirflowCoordinatorCoreRequires,
             "can_write_airflow_config",
@@ -228,10 +234,13 @@ def test_restart_when_existing_config_changes(context, state, container, schedul
         ),
         unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock,
     ):
-        state_out = context.run(context.on.pebble_ready(container), state_in)
+        state_out = context.run(context.on.pebble_ready(running_container), state_in)
 
     assert state_out.unit_status == ops.ActiveStatus()
     restart_mock.assert_called_once()
+    _assert_single_security_event(
+        caplog, "sys_restart:juju-charm", trigger="configuration_changed"
+    )
 
 
 def test_no_restart_when_config_unchanged(context, state, container, scheduler_relation):
@@ -660,3 +669,168 @@ def test_log_target_disabled_and_rotated_on_endpoint_changes(context, state, con
     assert layer_a_again.log_targets[base_target].location == "http://1.2.3.4:4318"
     assert layer_a_again.log_targets[base_target].services == ["airflow-scheduler"]
     assert layer_a_again.log_targets[rotated_target_name].services == []
+
+
+def _security_events(caplog):
+    return [
+        json.loads(record.getMessage())["owasp_event"]
+        for record in caplog.records
+        if record.name == "security_logging"
+    ]
+
+
+def _assert_single_security_event(caplog, event_name, **data):
+    events = _security_events(caplog)
+    assert [event["event"] for event in events] == [event_name]
+    assert events[0]["appid"] == constants.APP_ID
+    assert events[0]["target"] == constants.SERVICE_NAME
+    for key, value in data.items():
+        assert events[0]["data"][key] == value
+
+
+def _coordinator_relation_with_config():
+    """Coordinator relation with enough data for the charm to render a real config."""
+    secret = ops.testing.Secret({"sensitive-data": json.dumps({"secret": "s3cret"})})
+    relation = ops.testing.Relation(
+        "airflow-coordinator",
+        remote_app_data={
+            "config-template": "[core]\nfernet_key = {{ secret }}\n",
+            "secret-sensitive-data": secret.id,
+        },
+    )
+    return relation, secret
+
+
+def test_first_deploy_logs_startup_not_restart(context, state, container, caplog):
+    """On a fresh deploy the config file is new and the service has never run.
+
+    Replan starts the service, so this is a startup, not a charm restart.
+    """
+    relation, secret = _coordinator_relation_with_config()
+    state_in = dataclasses.replace(state, relations=[relation], secrets=[secret])
+
+    with (
+        caplog.at_level(logging.WARNING, logger="security_logging"),
+        unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock,
+    ):
+        state_out = context.run(context.on.pebble_ready(container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    restart_mock.assert_not_called()
+    _assert_single_security_event(caplog, "sys_startup:pebble", trigger="pebble_replan")
+
+
+def test_unchanged_config_while_running_logs_nothing(
+    context, state, running_container, scheduler_relation, caplog
+):
+    state_in = dataclasses.replace(
+        state, relations=[scheduler_relation], containers=[running_container]
+    )
+
+    with (
+        caplog.at_level(logging.WARNING, logger="security_logging"),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=False,
+        ),
+    ):
+        state_out = context.run(context.on.pebble_ready(running_container), state_in)
+
+    assert state_out.unit_status == ops.ActiveStatus()
+    assert not _security_events(caplog)
+
+
+def test_missing_relation_while_running_logs_shutdown(context, state, running_container, caplog):
+    state_in = dataclasses.replace(state, relations=[], containers=[running_container])
+
+    with caplog.at_level(logging.WARNING, logger="security_logging"):
+        state_out = context.run(context.on.pebble_ready(running_container), state_in)
+
+    assert state_out.unit_status == ops.BlockedStatus("Missing airflow-coordinator relation")
+    out_container = state_out.get_container(constants.CONTAINER_NAME)
+    assert out_container.service_statuses[constants.SERVICE_NAME] == (
+        ops.pebble.ServiceStatus.INACTIVE
+    )
+    _assert_single_security_event(
+        caplog, "sys_shutdown:juju-charm", trigger="required_relation_missing"
+    )
+
+
+def test_missing_relation_while_stopped_logs_nothing(context, state, running_container, caplog):
+    stopped_container = dataclasses.replace(
+        running_container,
+        service_statuses={constants.SERVICE_NAME: ops.pebble.ServiceStatus.INACTIVE},
+    )
+    state_in = dataclasses.replace(state, relations=[], containers=[stopped_container])
+
+    with caplog.at_level(logging.WARNING, logger="security_logging"):
+        state_out = context.run(context.on.pebble_ready(stopped_container), state_in)
+
+    assert state_out.unit_status == ops.BlockedStatus("Missing airflow-coordinator relation")
+    assert not _security_events(caplog)
+
+
+def test_stop_failure_logs_no_shutdown(context, state, running_container, caplog):
+    state_in = dataclasses.replace(state, relations=[], containers=[running_container])
+
+    with (
+        caplog.at_level(logging.WARNING, logger="security_logging"),
+        unittest.mock.patch(
+            "ops.model.Container.stop",
+            autospec=True,
+            side_effect=ops.pebble.APIError(
+                body={}, code=500, status="Internal Server Error", message="stop failed"
+            ),
+        ),
+    ):
+        state_out = context.run(context.on.pebble_ready(running_container), state_in)
+
+    assert isinstance(state_out.unit_status, ops.BlockedStatus)
+    assert not _security_events(caplog)
+
+
+def test_replan_failure_with_service_in_error_logs_crash(
+    context, state, running_container, scheduler_relation, caplog
+):
+    crashed_container = dataclasses.replace(
+        running_container,
+        service_statuses={constants.SERVICE_NAME: ops.pebble.ServiceStatus.ERROR},
+    )
+    state_in = dataclasses.replace(
+        state, relations=[scheduler_relation], containers=[crashed_container]
+    )
+    fake_change = unittest.mock.Mock()
+    fake_change.id = "1"
+    fake_change.kind = "replan"
+    fake_change.summary = "replan failed"
+    fake_change.tasks = []
+
+    with (
+        caplog.at_level(logging.WARNING, logger="security_logging"),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "can_write_airflow_config",
+            new_callable=unittest.mock.PropertyMock,
+            return_value=True,
+        ),
+        unittest.mock.patch.object(
+            AirflowCoordinatorCoreRequires,
+            "airflow_config_needs_update",
+            return_value=False,
+        ),
+        unittest.mock.patch(
+            "ops.model.Container.replan",
+            side_effect=ops.pebble.ChangeError(err="x", change=fake_change),
+        ),
+    ):
+        state_out = context.run(context.on.pebble_ready(crashed_container), state_in)
+
+    assert state_out.unit_status == ops.BlockedStatus("Failed to replan Pebble services")
+    _assert_single_security_event(caplog, "sys_crash:PebbleServiceError", status="error")

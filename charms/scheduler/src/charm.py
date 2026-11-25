@@ -14,6 +14,7 @@ from charms.airflow_coordinator_k8s.v0.airflow_coordinator import (
 from ops.pebble import LayerDict
 
 import constants
+from security_logging import PebbleServiceSecurityLogger
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,11 @@ class AirflowSchedulerCharm(ops.CharmBase):
         framework.observe(self.on[constants.CONTAINER_NAME].pebble_ready, self._reconcile)
 
         self._container = self.unit.get_container(constants.CONTAINER_NAME)
+        self._security_events = PebbleServiceSecurityLogger(
+            container=self._container,
+            appid=constants.APP_ID,
+            service_name=constants.SERVICE_NAME,
+        )
 
         # Create config requires object for handling Airflow configurations
         self._config_requires = AirflowCoordinatorCoreRequires(
@@ -141,14 +147,17 @@ class AirflowSchedulerCharm(ops.CharmBase):
     def _stop_service(self) -> None:
         """Stop the scheduler service (idempotent)."""
         try:
+            was_running = self._security_events.is_running()
             if constants.SERVICE_NAME in self._container.get_plan().services:
-                logger.info(f"Stopping {constants.SERVICE_NAME} service")
+                logger.info(f"Stopping service {constants.SERVICE_NAME}")
                 self._container.stop(constants.SERVICE_NAME)
         except ops.pebble.APIError as e:
             raise ExitWithStatusError(
                 "Failed to stop service: Pebble API error",
                 ops.BlockedStatus,
             ) from e
+        logger.info("Stopped %s service", constants.SERVICE_NAME)
+        self._security_events.log_shutdown_if_running(was_running, "required_relation_missing")
 
     def _cleanup_airflow_home_contents(self) -> None:
         """Cleanup the contents of the Airflow home directory."""
@@ -279,23 +288,31 @@ class AirflowSchedulerCharm(ops.CharmBase):
         """Add the Pebble layer and replan.
 
         The service will start automatically since startup is enabled.
+        It is only restarted if it was already running, since a service that
+        replan just started has already picked up the new configuration.
 
         Raises:
             ExitWithStatusError: If the service cannot be replanned.
         """
+        was_running = self._security_events.is_running()
         self._container.add_layer("scheduler-base", self._airflow_scheduler_layer, combine=True)
 
         try:
             self._container.replan()
-            if restart_service:
+            if restart_service and was_running:
                 self._container.restart(constants.SERVICE_NAME)
+                self._security_events.log_restart("configuration_changed")
+            else:
+                self._security_events.log_startup_if_transitioned(was_running)
         except ops.pebble.ChangeError as e:
+            self._security_events.log_crash_if_error()
             logger.exception("Pebble replan failed for scheduler service: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",
                 ops.BlockedStatus,
             ) from e
         except ops.pebble.APIError as e:
+            self._security_events.log_crash_if_error()
             logger.exception("Pebble restart failed for scheduler service: %s", e)
             raise ExitWithStatusError(
                 "Failed to replan Pebble services",

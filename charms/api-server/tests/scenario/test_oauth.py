@@ -95,33 +95,35 @@ class TestWebserverConfigHandling:
         restart_mock.assert_not_called()
 
     def test_service_restarted_when_webserver_config_written(
-        self, context, state, container, api_server_relation
+        self, context, state, running_container, api_server_relation
     ):
-        """When write_webserver_config is called the service is restarted."""
+        """When write_webserver_config is called the running service is restarted."""
         state_in = dataclasses.replace(
             state,
             relations=[api_server_relation],
+            containers=[running_container],
         )
 
         with (
             _patch_coordinator_ready_with_webserver(needs_update=True),
             unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock,
         ):
-            state_out = context.run(context.on.pebble_ready(container), state_in)
+            state_out = context.run(context.on.pebble_ready(running_container), state_in)
 
         assert state_out.unit_status == ops.ActiveStatus()
 
         restart_mock.assert_called_once()
 
     def test_stale_webserver_config_removed_when_oauth_inactive(
-        self, context, state, container, api_server_relation
+        self, context, state, running_container, api_server_relation
     ):
         """When can_write_webserver_config is False but the file exists on
-        disk, the file is removed and the service restarts.
+        disk, the file is removed and the running service restarts.
         """
         state_in = dataclasses.replace(
             state,
             relations=[api_server_relation],
+            containers=[running_container],
         )
 
         with (
@@ -130,7 +132,7 @@ class TestWebserverConfigHandling:
             unittest.mock.patch("ops.model.Container.remove_path", autospec=True) as remove_mock,
             unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock,
         ):
-            state_out = context.run(context.on.pebble_ready(container), state_in)
+            state_out = context.run(context.on.pebble_ready(running_container), state_in)
 
         assert state_out.unit_status == ops.ActiveStatus()
 

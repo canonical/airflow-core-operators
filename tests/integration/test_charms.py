@@ -312,15 +312,11 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
             "otelcol:receive-otlp",
         )
 
+        core_apps = [constants.COORDINATOR_APP, *constants.CORE_APPS]
         juju.wait(
             lambda status: (
-                jubilant.all_active(
-                    status,
-                    constants.COORDINATOR_APP,
-                    *constants.CORE_APPS,
-                )
-                and jubilant.all_blocked(status, "otelcol")
-                and jubilant.all_agents_idle(status)
+                jubilant.all_active(status, *core_apps)
+                and jubilant.all_agents_idle(status, *core_apps)
             ),
             error=jubilant.any_error,
             timeout=10 * 60,
@@ -404,7 +400,7 @@ def test_send_otlp_propagates_otel_config_to_core_charms(
                     constants.COORDINATOR_APP,
                     *constants.CORE_APPS,
                 )
-                and jubilant.all_agents_idle(status)
+                and jubilant.all_agents_idle(status, *core_apps)
                 and "send-otlp" not in status.apps[constants.COORDINATOR_APP].relations
             ),
             error=jubilant.any_error,

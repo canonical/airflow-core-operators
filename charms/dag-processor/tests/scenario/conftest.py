@@ -7,11 +7,13 @@ import logging
 import ops.testing
 import pytest
 
+import constants
 from charm import AirflowDagProcessorCharm
 
 logger = logging.getLogger(__name__)
 
 AIRFLOW_VERSION = "3.1.0"
+LAYER_NAME = "dag-processor-base"
 
 
 @pytest.fixture
@@ -40,6 +42,29 @@ def container_with_layer(container):
         }
     )
     return dataclasses.replace(container, layers={"dag-processor-base": existing_layer})
+
+
+@pytest.fixture(scope="function")
+def running_container():
+    """Container whose service is already defined and running in Pebble."""
+    return ops.testing.Container(
+        name="airflow-dag-processor",
+        can_connect=True,
+        layers={
+            LAYER_NAME: ops.pebble.Layer(
+                {
+                    "services": {
+                        constants.SERVICE_NAME: {
+                            "override": "replace",
+                            "command": "airflow dag-processor",
+                            "startup": "enabled",
+                        }
+                    }
+                }
+            )
+        },
+        service_statuses={constants.SERVICE_NAME: ops.pebble.ServiceStatus.ACTIVE},
+    )
 
 
 @pytest.fixture(scope="function")

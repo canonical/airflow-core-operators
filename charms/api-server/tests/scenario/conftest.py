@@ -8,11 +8,13 @@ import logging
 import ops.testing
 import pytest
 
+import constants
 from charm import AirflowApiServerCharm
 
 logger = logging.getLogger(__name__)
 
 AIRFLOW_VERSION = "3.1.0"
+LAYER_NAME = "api-server-base"
 
 
 @pytest.fixture
@@ -41,6 +43,43 @@ def container_with_layer(container):
         }
     )
     return dataclasses.replace(container, layers={"api-server-base": existing_layer})
+
+
+@pytest.fixture(scope="function")
+def running_container():
+    """Container whose service is already defined and running in Pebble.
+
+    The layer mirrors the steady-state plan produced by
+    ``AirflowApiServerCharm._api_server_layer`` (no ingress, no OTLP endpoint),
+    so that a reconcile which only rewrites config files leaves the Pebble plan
+    unchanged, matching production behavior.
+    """
+    return ops.testing.Container(
+        name="airflow-api-server",
+        can_connect=True,
+        layers={
+            LAYER_NAME: ops.pebble.Layer(
+                {
+                    "services": {
+                        constants.ROCK_SERVICE_NAME: {
+                            "override": "replace",
+                            "command": "true",
+                            "startup": "disabled",
+                        },
+                        constants.SERVICE_NAME: {
+                            "override": "replace",
+                            "summary": "A service that runs the api-server workload.",
+                            "command": "airflow api-server",
+                            "startup": "enabled",
+                            "user": constants.WORKLOAD_USER,
+                            "group": constants.WORKLOAD_GROUP,
+                        },
+                    }
+                }
+            )
+        },
+        service_statuses={constants.SERVICE_NAME: ops.pebble.ServiceStatus.ACTIVE},
+    )
 
 
 @pytest.fixture(scope="function")
