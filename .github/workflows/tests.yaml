@@ -25,7 +25,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - name: Check Libraries
@@ -44,7 +44,7 @@ jobs:
         directory: ${{ fromJSON(inputs.directories || '["charms/api-server","charms/scheduler","charms/dag-processor","charms/triggerer"]') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -63,7 +63,7 @@ jobs:
         directory: ${{ fromJSON(inputs.directories || '["charms/api-server","charms/scheduler","charms/dag-processor","charms/triggerer"]') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -80,7 +80,7 @@ jobs:
       matrix: ${{ steps.out.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: Generate integration test matrix
         id: out
         shell: bash
@@ -103,9 +103,9 @@ jobs:
     if: ${{ needs.discover-integration-tasks.outputs.matrix != '{"include":[]}' }}
     steps:
       - name: Maximise GH runner space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@v2.0.0
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install dependencies (concierge)
         shell: bash

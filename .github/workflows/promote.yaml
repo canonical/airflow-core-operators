@@ -34,7 +34,7 @@ jobs:
       matrix: ${{ steps.gen.outputs.matrix }}
     steps:
       - name: checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Generate charm matrix
         id: gen
@@ -57,7 +57,7 @@ jobs:
       matrix: ${{ fromJSON(needs.list-of-charms.outputs.matrix) }}
     steps:
       - name: checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Compute Tag Prefix
         id: name
@@ -65,7 +65,7 @@ jobs:
         run: echo "tag_prefix=$(basename '${{ matrix.charm_path }}')" >> "$GITHUB_OUTPUT"
 
       - name: Promote charm
-        uses: canonical/charming-actions/release-charm@2.6.2
+        uses: canonical/charming-actions/release-charm@2.7.0
         with:
           credentials: ${{ secrets.CHARMHUB_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
