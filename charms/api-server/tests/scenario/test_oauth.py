@@ -40,6 +40,60 @@ def _patch_coordinator_ready_with_webserver(needs_update: bool = True):
 
 
 class TestWebserverConfigHandling:
+    def test_template_only_relation_change_rewrites_config_and_restarts(
+        self, context, state, container, api_server_relation, tmp_path
+    ):
+        """A coordinator template update is applied without a new Pebble-ready event."""
+        secret = ops.testing.Secret({"sensitive-data": '{"client_id": "test-client"}'})
+        original_template = 'CLIENT_ID = "{{ client_id }}"\nAUTH_USER_REGISTRATION = True'
+        updated_template = original_template.replace("True", "False")
+        relation = dataclasses.replace(
+            api_server_relation,
+            remote_app_data={
+                "config-template": "[core]\n",
+                "secret-sensitive-data": secret.id,
+                "webserver-config-template": original_template,
+            },
+        )
+        workload = dataclasses.replace(
+            container,
+            mounts={
+                "airflow-home": ops.testing.Mount(location=constants.AIRFLOW_HOME, source=tmp_path)
+            },
+        )
+        initial_state = dataclasses.replace(
+            state, relations=[relation], secrets=[secret], containers=[workload]
+        )
+        state_out = context.run(
+            context.on.relation_changed(relation, remote_unit=0), initial_state
+        )
+
+        assert state_out.unit_status == ops.ActiveStatus()
+        config_path = tmp_path / "webserver_config.py"
+        assert (
+            config_path.read_text() == 'CLIENT_ID = "test-client"\nAUTH_USER_REGISTRATION = True'
+        )
+
+        updated_relation = dataclasses.replace(
+            state_out.get_relation(relation.id),
+            remote_app_data={
+                **relation.remote_app_data,
+                "webserver-config-template": updated_template,
+            },
+        )
+        updated_state = dataclasses.replace(state_out, relations=[updated_relation])
+
+        with unittest.mock.patch("ops.model.Container.restart", autospec=True) as restart_mock:
+            state_out = context.run(
+                context.on.relation_changed(updated_relation, remote_unit=0), updated_state
+            )
+
+        assert state_out.unit_status == ops.ActiveStatus()
+        assert (
+            config_path.read_text() == 'CLIENT_ID = "test-client"\nAUTH_USER_REGISTRATION = False'
+        )
+        restart_mock.assert_called_once_with(unittest.mock.ANY, constants.SERVICE_NAME)
+
     def test_webserver_config_written_when_active_and_needs_update(
         self, context, state, container, api_server_relation
     ):
