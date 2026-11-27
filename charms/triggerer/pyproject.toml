@@ -8,8 +8,8 @@ requires-python = ">=3.10"
 
 # Dependencies of the charm code
 dependencies = [
-    "ops>=3,<4",
-    "pydantic>=1.0",
+    "ops>=3.10.0,<4",
+    "pydantic>=2.14.4",
     "Jinja2>=3.1.6",
     "owasp-logger>=0.1.6,<0.2.0",
 ]
